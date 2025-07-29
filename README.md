@@ -58,7 +58,7 @@ If you prefer to run servers separately:
 
 **Frontend:**
 ```bash
-cd frontend
+cd front-end-new
 npm install
 npm run dev
 ```
@@ -97,7 +97,7 @@ Try these example messages to test the fraud detection:
 
 ```
 datathon-final/
-├── frontend/                 # Next.js frontend
+├── front-end-new/           # Next.js frontend
 │   ├── app/
 │   │   ├── chat/page.tsx    # Main chat interface
 │   │   └── globals.css      # Global styles
@@ -149,7 +149,7 @@ Edit `backend/server.js` to modify fraud detection logic:
 ## Development
 
 ### Adding New Features
-1. **Frontend**: Add components in `frontend/components/`
+1. **Frontend**: Add components in `front-end-new/components/`
 2. **Backend**: Extend `server.js` with new Socket.IO events
 3. **Styling**: Use Tailwind CSS classes for consistent design
 
@@ -162,7 +162,7 @@ Edit `backend/server.js` to modify fraud detection logic:
 
 ### Frontend
 ```bash
-cd frontend
+cd front-end-new
 npm run build
 npm start
 ```
