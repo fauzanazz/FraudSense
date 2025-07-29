@@ -21,7 +21,17 @@ app.use(express.json());
 const connectedUsers = new Map();
 const messages = new Map(); // messageId -> message
 
-// Fraud detection function (simplified for demo)
+// Helper function to find socket by username
+function findSocketByUsername(username) {
+  for (const [socketId, userData] of connectedUsers.entries()) {
+    if (userData.username === username) {
+      return io.sockets.sockets.get(socketId);
+    }
+  }
+  return null;
+}
+
+// Text fraud detection function (simplified for demo)
 function detectFraud(text) {
   // Simple keyword-based fraud detection
   const fraudKeywords = [
@@ -69,6 +79,49 @@ function detectFraud(text) {
   };
 }
 
+// Audio fraud detection function (simplified for demo)
+function detectAudioFraud(audioData) {
+  // In a real implementation, this would:
+  // 1. Decode the base64 audio data
+  // 2. Convert to audio features (MFCC, spectrogram, etc.)
+  // 3. Run through a trained model (LALM, etc.)
+  // 4. Return classification results
+  
+  // For demo purposes, we'll simulate audio fraud detection
+  const audioFeatures = {
+    volume: Math.random(),
+    pitch: Math.random(),
+    speed: Math.random(),
+    clarity: Math.random()
+  };
+  
+  // Simulate fraud detection based on audio characteristics
+  let fraudScore = 0;
+  
+  // High volume might indicate urgency
+  if (audioFeatures.volume > 0.8) fraudScore += 0.2;
+  
+  // Unusual pitch patterns
+  if (audioFeatures.pitch < 0.2 || audioFeatures.pitch > 0.8) fraudScore += 0.3;
+  
+  // Fast speech might indicate urgency
+  if (audioFeatures.speed > 0.7) fraudScore += 0.2;
+  
+  // Poor audio quality might indicate recording
+  if (audioFeatures.clarity < 0.4) fraudScore += 0.3;
+  
+  // Add some randomness for demo
+  fraudScore += Math.random() * 0.2;
+  
+  // Normalize score to 0-1 range
+  fraudScore = Math.min(fraudScore, 1);
+  
+  return {
+    classification: fraudScore > 0.6 ? 'Fraud Detected' : 'Safe',
+    confidence: fraudScore
+  };
+}
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -79,6 +132,17 @@ io.on('connection', (socket) => {
     connectedUsers.set(socket.id, { username, room });
     
     console.log(`${username} joined room: ${room}`);
+    
+    // Notify others in the room
+    socket.to(room).emit('userJoined', { username, timestamp: new Date() });
+  });
+
+  // Handle user joining call room
+  socket.on('joinCallRoom', ({ username, room }) => {
+    socket.join(room);
+    connectedUsers.set(socket.id, { username, room });
+    
+    console.log(`${username} joined call room: ${room}`);
     
     // Notify others in the room
     socket.to(room).emit('userJoined', { username, timestamp: new Date() });
@@ -141,6 +205,92 @@ io.on('connection', (socket) => {
     console.log(`Feedback received for message ${messageId}: ${type} from ${user.username}`);
   });
   
+  // WebRTC Signaling Events
+  socket.on('offer', (data) => {
+    const targetSocket = findSocketByUsername(data.to);
+    if (targetSocket) {
+      targetSocket.emit('offer', {
+        from: connectedUsers.get(socket.id)?.username,
+        offer: data.offer
+      });
+    }
+  });
+
+  socket.on('answer', (data) => {
+    const targetSocket = findSocketByUsername(data.to);
+    if (targetSocket) {
+      targetSocket.emit('answer', {
+        from: connectedUsers.get(socket.id)?.username,
+        answer: data.answer
+      });
+    }
+  });
+
+  socket.on('iceCandidate', (data) => {
+    const targetSocket = findSocketByUsername(data.to);
+    if (targetSocket) {
+      targetSocket.emit('iceCandidate', {
+        from: connectedUsers.get(socket.id)?.username,
+        candidate: data.candidate
+      });
+    }
+  });
+
+  // Call Management Events
+  socket.on('callRequest', (data) => {
+    const targetSocket = findSocketByUsername(data.to);
+    if (targetSocket) {
+      targetSocket.emit('callRequest', {
+        from: connectedUsers.get(socket.id)?.username,
+        type: data.type
+      });
+    }
+  });
+
+  socket.on('callAccepted', (data) => {
+    const targetSocket = findSocketByUsername(data.to);
+    if (targetSocket) {
+      targetSocket.emit('callAccepted', {
+        from: connectedUsers.get(socket.id)?.username
+      });
+    }
+  });
+
+  socket.on('callRejected', (data) => {
+    const targetSocket = findSocketByUsername(data.to);
+    if (targetSocket) {
+      targetSocket.emit('callRejected', {
+        from: connectedUsers.get(socket.id)?.username
+      });
+    }
+  });
+
+  socket.on('endCall', (data) => {
+    const targetSocket = findSocketByUsername(data.to);
+    if (targetSocket) {
+      targetSocket.emit('callEnded', {
+        from: connectedUsers.get(socket.id)?.username
+      });
+    }
+  });
+
+  // Audio Processing for Fraud Detection
+  socket.on('audioChunk', (data) => {
+    const user = connectedUsers.get(socket.id);
+    if (!user) return;
+
+    console.log(`Received audio chunk from ${user.username}`);
+    
+    // Process audio for fraud detection
+    setTimeout(() => {
+      const fraudResult = detectAudioFraud(data.audio);
+      console.log(`Audio fraud analysis for ${user.username}:`, fraudResult);
+      
+      // Send result back to the client
+      socket.emit('fraudResult', fraudResult);
+    }, 1000); // Simulate processing delay
+  });
+
   // Handle disconnection
   socket.on('disconnect', () => {
     const user = connectedUsers.get(socket.id);
@@ -170,6 +320,14 @@ app.get('/health', (req, res) => {
 app.get('/users', (req, res) => {
   const users = Array.from(connectedUsers.values());
   res.json(users);
+});
+
+// Get available users for calls
+app.get('/call-users', (req, res) => {
+  const callUsers = Array.from(connectedUsers.values())
+    .filter(user => user.room === 'call')
+    .map(user => user.username);
+  res.json(callUsers);
 });
 
 const PORT = process.env.PORT || 3001;

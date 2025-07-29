@@ -19,8 +19,16 @@ export default function Home() {
         </div>
       </div>
       <Separator className="my-4" />
-      <div className="flex flex-col gpa-y-4">
+      <div className="flex flex-col gap-y-4">
         <h5 className="text-xl font-bold">Recent Detections</h5>
+        <div className="bg-blue-50 p-4 rounded-lg">
+          <h6 className="font-semibold text-blue-800 mb-2">🧪 Testing Instructions</h6>
+          <ul className="text-sm text-blue-700 space-y-1">
+            <li>• <strong>Chat:</strong> Open multiple tabs to test with different users</li>
+            <li>• <strong>Video Call:</strong> Open another browser window/tab with different username</li>
+            <li>• <strong>Fraud Detection:</strong> Try suspicious keywords in chat or speak during calls</li>
+          </ul>
+        </div>
       </div>
     </div>
   );

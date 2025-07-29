@@ -1,14 +1,15 @@
-# Real-time Chat with Fraud Detection
+# Real-time Chat & Video Call with Fraud Detection
 
-A modern real-time chat application built with Next.js and Socket.IO, featuring an integrated fraud detection pipeline that analyzes messages in real-time.
+A modern real-time chat and video call application built with Next.js and Socket.IO, featuring integrated fraud detection pipelines that analyze both text messages and audio streams in real-time.
 
 ## Features
 
 ### Frontend (Next.js)
 - 🎨 Modern, responsive UI with Tailwind CSS
 - 💬 Real-time messaging with WebSocket
+- 📞 Peer-to-peer video/audio calls with WebRTC
 - 👤 User authentication with username
-- 🚨 Live fraud detection results
+- 🚨 Live fraud detection results (text + audio)
 - 👍👎 Feedback system for classification accuracy
 - ⚡ Smooth animations and transitions
 - 📱 Mobile-friendly design
@@ -16,17 +17,26 @@ A modern real-time chat application built with Next.js and Socket.IO, featuring 
 ### Backend (Node.js + Socket.IO)
 - 🔌 WebSocket server for real-time communication
 - 🛡️ Text-based fraud detection pipeline
+- 🔊 Audio-based fraud detection pipeline
 - 📊 Confidence scoring for classifications
 - 👥 Multi-user room management
 - 📝 Message history and feedback tracking
 - 🏥 Health check endpoints
 
+### Video Call Features
+- **WebRTC Peer-to-Peer**: Direct media streaming between users
+- **Audio/Video Support**: Both audio-only and video calls
+- **Real-time Audio Analysis**: Continuous fraud detection on audio streams
+- **Call Controls**: Mute, video toggle, end call
+- **Live Audio Visualizer**: Real-time waveform display
+- **Fraud Alerts**: Instant notifications during calls
+
 ### Fraud Detection Features
-- **Keyword Analysis**: Detects suspicious terms like "password", "credit card", "urgent"
-- **Pattern Matching**: Identifies SSN, credit card numbers, phone numbers
-- **Urgency Indicators**: Flags messages with excessive punctuation or urgency
-- **Confidence Scoring**: Provides percentage-based confidence for each classification
-- **Real-time Processing**: Analyzes messages within 1 second of sending
+- **Text Analysis**: Detects suspicious terms and patterns
+- **Audio Analysis**: Analyzes voice characteristics and patterns
+- **Real-time Processing**: Processes data within seconds
+- **Confidence Scoring**: Provides percentage-based confidence
+- **Multi-modal Detection**: Combines text and audio analysis
 
 ## Quick Start
 
@@ -72,26 +82,41 @@ npm run dev
 
 ## Usage
 
+### Chat Feature
 1. **Open the application** at http://localhost:3000
-2. **Enter your username** in the join modal
-3. **Start chatting** - messages are analyzed automatically
-4. **View fraud results** - each message shows a classification badge
-5. **Provide feedback** - use thumbs up/down buttons to rate accuracy
+2. **Click "Enter Chat Room"** or navigate to `/chat`
+3. **Enter your username** in the join modal
+4. **Start chatting** - messages are analyzed automatically
+5. **View fraud results** - each message shows a classification badge
+6. **Provide feedback** - use thumbs up/down buttons to rate accuracy
+
+### Video Call Feature
+1. **Open the application** at http://localhost:3000
+2. **Click "Start Voice Call"** or navigate to `/call`
+3. **Enter your username** in the join modal
+4. **Select a user** from the available users list
+5. **Choose call type** (audio or video)
+6. **Start the call** - audio will be analyzed in real-time
+7. **View fraud alerts** - real-time notifications during the call
 
 ## Testing Fraud Detection
 
-Try these example messages to test the fraud detection:
-
-### Safe Messages:
+### Text Messages:
+**Safe messages:**
 - "Hello, how are you today?"
 - "Let's meet for coffee tomorrow"
-- "Thanks for the help!"
 
-### Fraudulent Messages:
+**Fraudulent messages:**
 - "URGENT: Your account has been suspended! Click here to verify"
 - "You've won $1,000,000! Send your credit card details"
 - "I'm a Nigerian prince and need your bank account number"
-- "Your SSN 123-45-6789 needs verification"
+
+### Audio Calls:
+The system analyzes audio characteristics including:
+- Volume levels (high volume may indicate urgency)
+- Pitch patterns (unusual patterns may indicate fraud)
+- Speech speed (fast speech may indicate urgency)
+- Audio quality (poor quality may indicate recording)
 
 ## Project Structure
 
@@ -99,15 +124,18 @@ Try these example messages to test the fraud detection:
 datathon-final/
 ├── front-end-new/           # Next.js frontend
 │   ├── app/
-│   │   ├── chat/page.tsx    # Main chat interface
+│   │   ├── chat/page.tsx    # Chat interface
+│   │   ├── call/page.tsx    # Video call interface
 │   │   └── globals.css      # Global styles
 │   ├── components/
 │   │   ├── ChatMessage.tsx  # Individual message component
 │   │   ├── ChatInput.tsx    # Message input component
-│   │   └── UserJoinModal.tsx # Username entry modal
+│   │   ├── UserJoinModal.tsx # Username entry modal
+│   │   ├── CallInterface.tsx # Video call interface
+│   │   └── CallSetup.tsx    # Call setup modal
 │   └── package.json
 ├── backend/                  # Node.js backend
-│   ├── server.js            # Socket.IO server
+│   ├── server.js            # Socket.IO server with WebRTC signaling
 │   ├── package.json
 │   └── README.md
 └── package.json             # Root package.json
@@ -118,32 +146,70 @@ datathon-final/
 ### Backend REST API
 - `GET /health` - Server health check
 - `GET /users` - List connected users
+- `GET /call-users` - List users available for calls
 
 ### WebSocket Events
 
-**Client → Server:**
+**Chat Events:**
 - `joinRoom` - Join chat room
 - `sendMessage` - Send message
 - `sendFeedback` - Submit fraud detection feedback
 
-**Server → Client:**
+**Call Events:**
+- `joinCallRoom` - Join call room
+- `offer` - WebRTC offer
+- `answer` - WebRTC answer
+- `iceCandidate` - WebRTC ICE candidate
+- `callRequest` - Initiate call request
+- `callAccepted` - Accept call
+- `callRejected` - Reject call
+- `endCall` - End call
+- `audioChunk` - Send audio for analysis
+
+**Server Events:**
 - `message` - New message received
-- `fraudResult` - Fraud analysis result
+- `fraudResult` - Fraud analysis result (text or audio)
 - `feedbackUpdate` - Feedback count update
 - `userJoined` - User joined notification
 - `userLeft` - User left notification
 
+## WebRTC Implementation
+
+### Signaling
+- Uses Socket.IO for WebRTC signaling
+- Handles offer/answer exchange
+- Manages ICE candidate exchange
+- Supports multiple concurrent calls
+
+### Media Handling
+- Peer-to-peer media streaming
+- Audio recording for fraud detection
+- Real-time audio processing
+- Automatic media cleanup
+
+### STUN Servers
+- Google STUN servers for NAT traversal
+- Supports both audio and video calls
+- Automatic fallback mechanisms
+
 ## Customization
 
 ### Fraud Detection Rules
-Edit `backend/server.js` to modify fraud detection logic:
+Edit `backend/server.js` to modify detection logic:
+
+**Text Detection:**
 - Add/remove keywords in `fraudKeywords` array
 - Adjust pattern matching in `suspiciousPatterns`
 - Modify scoring algorithm in `detectFraud()` function
 
+**Audio Detection:**
+- Modify `detectAudioFraud()` function
+- Adjust audio feature thresholds
+- Integrate with real ML models (LALM, etc.)
+
 ### UI Styling
 - Modify Tailwind classes in component files
-- Update animations in `frontend/app/globals.css`
+- Update animations in `front-end-new/app/globals.css`
 - Customize color schemes and layouts
 
 ## Development
@@ -157,6 +223,7 @@ Edit `backend/server.js` to modify fraud detection logic:
 - Frontend logs: Browser console
 - Backend logs: Terminal running `npm run dev:backend`
 - WebSocket: Use browser dev tools Network tab
+- WebRTC: Use browser dev tools WebRTC tab
 
 ## Production Deployment
 
@@ -178,6 +245,15 @@ Remember to:
 - Configure CORS for production domains
 - Use a process manager like PM2
 - Set up proper SSL certificates
+- Configure TURN servers for WebRTC
+
+## Security Considerations
+
+- **WebRTC Security**: Implement proper authentication
+- **Audio Privacy**: Ensure audio data is handled securely
+- **Fraud Detection**: Validate all inputs and outputs
+- **Rate Limiting**: Implement API rate limiting
+- **Data Encryption**: Use HTTPS/WSS in production
 
 ## Contributing
 
