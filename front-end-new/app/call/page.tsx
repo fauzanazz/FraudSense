@@ -48,17 +48,30 @@ export default function CallPage() {
 
     newSocket.on('connect', () => {
       setCallState(prev => ({ ...prev, isConnected: true }));
-      console.log('Connected to signaling server');
+      console.log('✅ Connected to signaling server');
     });
 
     newSocket.on('disconnect', () => {
       setCallState(prev => ({ ...prev, isConnected: false }));
-      console.log('Disconnected from signaling server');
+      console.log('❌ Disconnected from signaling server');
+      
+      // Auto-reconnect after 3 seconds
+      setTimeout(() => {
+        if (!socket?.connected) {
+          console.log('🔄 Attempting to reconnect...');
+          newSocket.connect();
+        }
+      }, 3000);
     });
 
     newSocket.on('connect_error', (error: any) => {
-      console.error('Connection error:', error);
+      console.error('❌ Connection error:', error);
       setCallState(prev => ({ ...prev, isConnected: false }));
+    });
+
+    newSocket.on('reconnect', () => {
+      console.log('✅ Reconnected to signaling server');
+      setCallState(prev => ({ ...prev, isConnected: true }));
     });
 
     // Signaling events
@@ -158,9 +171,17 @@ export default function CallPage() {
 
   const initializeCall = async () => {
     try {
+      // Wait for socket to be connected
+      let retries = 0;
+      while (!socket && retries < 10) {
+        console.log('Waiting for socket connection...', retries);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        retries++;
+      }
+
       if (!socket) {
-        console.error('Socket not connected');
-        alert('Not connected to server');
+        console.error('Socket not connected after retries');
+        alert('Connection lost. Please refresh the page.');
         return;
       }
 
@@ -337,8 +358,17 @@ export default function CallPage() {
 
   const handleOffer = async (data: { from: string; offer: RTCSessionDescriptionInit }) => {
     try {
+      // Wait for socket to be connected
+      let retries = 0;
+      while (!socket && retries < 10) {
+        console.log('Waiting for socket connection...', retries);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        retries++;
+      }
+
       if (!socket) {
-        console.error('Socket not connected');
+        console.error('Socket not connected after retries');
+        alert('Connection lost. Please refresh the page.');
         return;
       }
 
@@ -414,9 +444,17 @@ export default function CallPage() {
 
   const initiateCall = async (targetUser: string, type: 'audio' | 'video') => {
     try {
+      // Wait for socket to be connected
+      let retries = 0;
+      while (!socket && retries < 10) {
+        console.log('Waiting for socket connection...', retries);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        retries++;
+      }
+
       if (!socket) {
-        console.error('Socket not connected');
-        alert('Not connected to server');
+        console.error('Socket not connected after retries');
+        alert('Connection lost. Please refresh the page.');
         return;
       }
 
