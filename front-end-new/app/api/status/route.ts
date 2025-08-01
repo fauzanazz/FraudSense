@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 export async function GET() {
   try {
     // Check if WebSocket server is running
-    const response = await fetch('http://localhost:3001/health', {
+    const response = await fetch(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001/health', {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

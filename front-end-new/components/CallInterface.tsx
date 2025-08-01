@@ -52,7 +52,7 @@ export default function CallInterface({
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const response = await fetch('http://localhost:3001/call-users');
+        const response = await fetch(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001/call-users');
         const users = await response.json();
         // Filter out current user and empty strings
         const filteredUsers = users.filter((user: string) => 
