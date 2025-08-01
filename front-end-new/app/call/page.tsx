@@ -30,7 +30,7 @@ export default function CallPage() {
   const [username, setUsername] = useState<string>('');
   const [showSetup, setShowSetup] = useState(true);
   const [remoteUser, setRemoteUser] = useState<string>('');
-  const [callType, setCallType] = useState<'audio' | 'video'>('video');
+  const [callType, setCallType] = useState<'audio' | 'video'>('audio');
   const [availableUsers, setAvailableUsers] = useState<string[]>([]);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -157,21 +157,23 @@ export default function CallPage() {
     }
   };
 
-  const handleCallRequest = (data: { from: string; type: 'audio' | 'video' }) => {
+  const handleCallRequest = async (data: { from: string; type: 'audio' | 'video' }) => {
     console.log('📞 Call request from:', data.from, 'Type:', data.type);
     const accepted = window.confirm(`${data.from} wants to start a ${data.type} call. Accept?`);
     if (accepted) {
       console.log('✅ Call accepted');
       setRemoteUser(data.from);
       setCallType(data.type);
+      
+      // Send acceptance notification first
       if (socket) {
         socket.emit('callAccepted', { to: data.from });
         console.log('📤 Call accepted notification sent');
       }
-      // Initialize call after accepting
-      setTimeout(() => {
-        initializeCall();
-      }, 1000); // Small delay to ensure notifications are sent
+      
+      // Initialize call immediately
+      console.log('🔧 Starting call initialization...');
+      await initializeCall();
     } else {
       console.log('❌ Call rejected');
       if (socket) {
@@ -181,37 +183,12 @@ export default function CallPage() {
     }
   };
 
-  const handleCallAccepted = async (data: { from: string }) => {
-    console.log('✅ Call accepted by:', data.from);
+  const handleCallAccepted = (data: { from: string }) => {
+    console.log('✅ Audio call accepted by:', data.from);
     setRemoteUser(data.from);
     setCallState(prev => ({ ...prev, isInCall: true }));
     setShowSetup(false);
-    
-    // Send offer after call is accepted
-    try {
-      console.log('📤 Creating and sending offer after acceptance...');
-      
-      if (!peerConnectionRef.current) {
-        console.error('❌ No peer connection available');
-        return;
-      }
-      
-      // Create and send offer
-      const offer = await peerConnectionRef.current.createOffer();
-      await peerConnectionRef.current.setLocalDescription(offer);
-
-      if (socket) {
-        socket.emit('offer', {
-          to: data.from,
-          offer: offer
-        });
-        console.log('📤 Offer sent to:', data.from);
-      } else {
-        console.error('❌ Socket not available when sending offer');
-      }
-    } catch (error) {
-      console.error('❌ Error sending offer after acceptance:', error);
-    }
+    console.log('🎵 Waiting for audio offer from:', data.from);
   };
 
   const handleCallRejected = (data: { from: string }) => {
@@ -227,7 +204,7 @@ export default function CallPage() {
 
   const initializeCall = async () => {
     try {
-      console.log('🔧 Initializing call...');
+      console.log('🔧 Initializing audio call...');
       
       // Check socket connection
       if (!socket) {
@@ -236,20 +213,16 @@ export default function CallPage() {
         return;
       }
 
-      // Get user media
-      console.log('📱 Getting user media...');
+      // Get user media - audio only
+      console.log('📱 Getting audio media...');
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: callType === 'video',
+        video: false,
         audio: true
       });
 
-      console.log('✅ Media stream obtained');
+      console.log('✅ Audio stream obtained');
       localStreamRef.current = stream;
       
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
-
       // Create peer connection
       console.log('🔗 Creating peer connection...');
       const peerConnection = new RTCPeerConnection({
@@ -261,14 +234,16 @@ export default function CallPage() {
 
       peerConnectionRef.current = peerConnection;
 
-      // Add local stream tracks
-      stream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, stream);
-      });
+      // Add local audio track only
+      const audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack) {
+        peerConnection.addTrack(audioTrack, stream);
+        console.log('✅ Audio track added to peer connection');
+      }
 
       // Handle incoming tracks
       peerConnection.ontrack = (event) => {
-        console.log('📹 Remote stream received during initialization');
+        console.log('🎵 Remote audio stream received during initialization');
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
         }
@@ -289,7 +264,8 @@ export default function CallPage() {
       peerConnection.onconnectionstatechange = () => {
         console.log('🔗 Connection state during initialization:', peerConnection.connectionState);
         if (peerConnection.connectionState === 'connected') {
-          console.log('✅ WebRTC connection established during initialization');
+          console.log('✅ WebRTC audio connection established');
+          setCallState(prev => ({ ...prev, isInCall: true }));
         } else if (peerConnection.connectionState === 'failed') {
           console.error('❌ WebRTC connection failed during initialization');
           endCall();
@@ -299,14 +275,13 @@ export default function CallPage() {
       // Start audio processing for fraud detection
       startAudioProcessing(stream);
 
-      setCallState(prev => ({ ...prev, isInCall: true }));
       setShowSetup(false);
       
-      console.log('✅ Call initialization completed');
+      console.log('✅ Audio call initialization completed');
 
     } catch (error) {
-      console.error('❌ Error initializing call:', error);
-      alert('Failed to access camera/microphone');
+      console.error('❌ Error initializing audio call:', error);
+      alert('Failed to access microphone');
       endCall();
     }
   };
@@ -428,7 +403,7 @@ export default function CallPage() {
 
   const handleOffer = async (data: { from: string; offer: RTCSessionDescriptionInit }) => {
     try {
-      console.log('📥 Received offer from:', data.from);
+      console.log('📥 Received audio offer from:', data.from);
       
       // Check socket connection - be more lenient
       if (!socket) {
@@ -450,16 +425,18 @@ export default function CallPage() {
 
       peerConnectionRef.current = peerConnection;
 
-      // Add local stream tracks
+      // Add local audio track if available
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => {
-          peerConnection.addTrack(track, localStreamRef.current!);
-        });
+        const audioTrack = localStreamRef.current.getAudioTracks()[0];
+        if (audioTrack) {
+          peerConnection.addTrack(audioTrack, localStreamRef.current);
+          console.log('✅ Local audio track added to peer connection');
+        }
       }
 
       // Handle incoming tracks
       peerConnection.ontrack = (event) => {
-        console.log('📹 Remote stream received from offer');
+        console.log('🎵 Remote audio stream received from offer');
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
         }
@@ -480,7 +457,7 @@ export default function CallPage() {
       peerConnection.onconnectionstatechange = () => {
         console.log('🔗 Connection state from offer:', peerConnection.connectionState);
         if (peerConnection.connectionState === 'connected') {
-          console.log('✅ WebRTC connection established from offer');
+          console.log('✅ WebRTC audio connection established from offer');
         } else if (peerConnection.connectionState === 'failed') {
           console.error('❌ WebRTC connection failed from offer');
           endCall();
@@ -506,7 +483,7 @@ export default function CallPage() {
       }
 
     } catch (error) {
-      console.error('❌ Error handling offer:', error);
+      console.error('❌ Error handling audio offer:', error);
       endCall();
     }
   };
@@ -537,7 +514,7 @@ export default function CallPage() {
 
   const initiateCall = async (targetUser: string, type: 'audio' | 'video') => {
     try {
-      console.log('🚀 Initiating call to:', targetUser, 'Type:', type);
+      console.log('🚀 Initiating audio call to:', targetUser);
       
       // Check socket connection
       if (!socket) {
@@ -553,31 +530,27 @@ export default function CallPage() {
       }
 
       // Send call request first
-      console.log('📞 Sending call request...');
+      console.log('📞 Sending audio call request...');
       socket.emit('callRequest', {
         to: targetUser,
-        type: type
+        type: 'audio'
       });
-      console.log('📤 Call request sent to:', targetUser);
+      console.log('📤 Audio call request sent to:', targetUser);
 
       // Set call state
       setRemoteUser(targetUser);
-      setCallType(type);
+      setCallType('audio');
       
-      console.log('📱 Getting user media...');
+      console.log('📱 Getting audio media...');
       
-      // Get user media first
+      // Get user media - audio only
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: type === 'video',
+        video: false,
         audio: true
       });
 
-      console.log('✅ Media stream obtained');
+      console.log('✅ Audio stream obtained');
       localStreamRef.current = stream;
-      
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
 
       console.log('🔗 Creating peer connection...');
       
@@ -591,14 +564,16 @@ export default function CallPage() {
 
       peerConnectionRef.current = peerConnection;
 
-      // Add local stream tracks
-      stream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, stream);
-      });
+      // Add local audio track only
+      const audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack) {
+        peerConnection.addTrack(audioTrack, stream);
+        console.log('✅ Audio track added to peer connection');
+      }
 
       // Handle incoming tracks
       peerConnection.ontrack = (event) => {
-        console.log('📹 Remote stream received');
+        console.log('🎵 Remote audio stream received');
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
         }
@@ -619,7 +594,7 @@ export default function CallPage() {
       peerConnection.onconnectionstatechange = () => {
         console.log('🔗 Connection state:', peerConnection.connectionState);
         if (peerConnection.connectionState === 'connected') {
-          console.log('✅ WebRTC connection established');
+          console.log('✅ WebRTC audio connection established');
         } else if (peerConnection.connectionState === 'failed') {
           console.error('❌ WebRTC connection failed');
           endCall();
@@ -629,11 +604,11 @@ export default function CallPage() {
       // Start audio processing
       startAudioProcessing(stream);
       
-      console.log('✅ Call initiation completed - waiting for acceptance');
+      console.log('✅ Audio call initiation completed - waiting for acceptance');
 
     } catch (error) {
-      console.error('❌ Error initiating call:', error);
-      alert('Failed to access camera/microphone or start call');
+      console.error('❌ Error initiating audio call:', error);
+      alert('Failed to access microphone or start call');
       endCall();
     }
   };
