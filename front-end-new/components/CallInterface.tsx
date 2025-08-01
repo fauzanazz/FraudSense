@@ -28,6 +28,7 @@ interface CallInterfaceProps {
   onToggleMute: () => void;
   onToggleVideo: () => void;
   isConnected: boolean;
+  availableUsers: string[];
 }
 
 export default function CallInterface({
@@ -41,35 +42,14 @@ export default function CallInterface({
   onEndCall,
   onToggleMute,
   onToggleVideo,
-  isConnected
+  isConnected,
+  availableUsers
 }: CallInterfaceProps) {
-  const [availableUsers, setAvailableUsers] = useState<string[]>([]);
   const [selectedUser, setSelectedUser] = useState<string>('');
   const [selectedCallType, setSelectedCallType] = useState<'audio' | 'video'>(callType);
   const audioVisualizerRef = useRef<HTMLCanvasElement>(null);
 
-  // Fetch available users
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const response = await fetch(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001/call-users');
-        const users = await response.json();
-        // Filter out current user and empty strings
-        const filteredUsers = users.filter((user: string) => 
-          user !== username && user && user.trim() !== ''
-        );
-        setAvailableUsers(filteredUsers);
-      } catch (error) {
-        console.error('Error fetching users:', error);
-      }
-    };
 
-    if (isConnected && !callState.isInCall) {
-      fetchUsers();
-      const interval = setInterval(fetchUsers, 5000); // Refresh every 5 seconds
-      return () => clearInterval(interval);
-    }
-  }, [isConnected, callState.isInCall, username]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);

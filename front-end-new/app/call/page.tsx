@@ -31,6 +31,7 @@ export default function CallPage() {
   const [showSetup, setShowSetup] = useState(true);
   const [remoteUser, setRemoteUser] = useState<string>('');
   const [callType, setCallType] = useState<'audio' | 'video'>('video');
+  const [availableUsers, setAvailableUsers] = useState<string[]>([]);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -46,10 +47,7 @@ export default function CallPage() {
       transports: ['websocket'],
     });
 
-    newSocket.on('connect', () => {
-      setCallState(prev => ({ ...prev, isConnected: true }));
-      console.log('✅ Connected to signaling server');
-    });
+
 
     newSocket.on('disconnect', () => {
       setCallState(prev => ({ ...prev, isConnected: false }));
@@ -97,6 +95,20 @@ export default function CallPage() {
       }));
     });
 
+    // User list updates
+    newSocket.on('userList', (users: string[]) => {
+      const filteredUsers = users.filter(user => user !== username && user && user.trim() !== '');
+      setAvailableUsers(filteredUsers);
+    });
+
+    // Request user list when connected
+    newSocket.on('connect', () => {
+      setCallState(prev => ({ ...prev, isConnected: true }));
+      console.log('✅ Connected to signaling server');
+      // Request current user list
+      newSocket.emit('getUserList');
+    });
+
     setSocket(newSocket);
 
     return () => {
@@ -128,12 +140,20 @@ export default function CallPage() {
 
   const handleUserJoined = (data: { username: string }) => {
     console.log(`${data.username} joined the call room`);
+    // Request updated user list
+    if (socket) {
+      socket.emit('getUserList');
+    }
   };
 
   const handleUserLeft = (data: { username: string }) => {
     console.log(`${data.username} left the call room`);
     if (data.username === remoteUser) {
       endCall();
+    }
+    // Request updated user list
+    if (socket) {
+      socket.emit('getUserList');
     }
   };
 
@@ -607,6 +627,10 @@ export default function CallPage() {
     setShowSetup(false);
     if (socket) {
       socket.emit('joinCallRoom', { username: user, room: 'call' });
+      // Request user list after joining
+      setTimeout(() => {
+        socket.emit('getUserList');
+      }, 1000);
     }
   };
 
@@ -627,6 +651,7 @@ export default function CallPage() {
       onToggleMute={toggleMute}
       onToggleVideo={toggleVideo}
       isConnected={callState.isConnected}
+      availableUsers={availableUsers}
     />
   );
 }
