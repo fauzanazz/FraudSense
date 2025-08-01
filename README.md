@@ -1,259 +1,177 @@
-# Real-time Chat & Video Call with Fraud Detection
+# Fraud Detection Chat & Call Application
 
-A modern real-time chat and video call application built with Next.js and Socket.IO, featuring integrated fraud detection pipelines that analyze both text messages and audio streams in real-time.
+A real-time chat and video call application with AI-powered fraud detection capabilities.
 
 ## Features
 
-### Frontend (Next.js)
-- 🎨 Modern, responsive UI with Tailwind CSS
-- 💬 Real-time messaging with WebSocket
-- 📞 Peer-to-peer video/audio calls with WebRTC
-- 👤 User authentication with username
-- 🚨 Live fraud detection results (text + audio)
-- 👍👎 Feedback system for classification accuracy
-- ⚡ Smooth animations and transitions
-- 📱 Mobile-friendly design
-
-### Backend (Node.js + Socket.IO)
-- 🔌 WebSocket server for real-time communication
-- 🛡️ Text-based fraud detection pipeline
-- 🔊 Audio-based fraud detection pipeline
-- 📊 Confidence scoring for classifications
-- 👥 Multi-user room management
-- 📝 Message history and feedback tracking
-- 🏥 Health check endpoints
-
-### Video Call Features
-- **WebRTC Peer-to-Peer**: Direct media streaming between users
-- **Audio/Video Support**: Both audio-only and video calls
-- **Real-time Audio Analysis**: Continuous fraud detection on audio streams
-- **Call Controls**: Mute, video toggle, end call
-- **Live Audio Visualizer**: Real-time waveform display
-- **Fraud Alerts**: Instant notifications during calls
-
-### Fraud Detection Features
-- **Text Analysis**: Detects suspicious terms and patterns
-- **Audio Analysis**: Analyzes voice characteristics and patterns
-- **Real-time Processing**: Processes data within seconds
-- **Confidence Scoring**: Provides percentage-based confidence
-- **Multi-modal Detection**: Combines text and audio analysis
-
-## Quick Start
-
-### Prerequisites
-- Node.js 18+ 
-- npm or yarn
-
-### Installation
-
-1. **Clone and install dependencies:**
-```bash
-git clone <repository-url>
-cd datathon-final
-npm run install:all
-```
-
-2. **Start both servers:**
-```bash
-npm run dev
-```
-
-This will start:
-- Frontend: http://localhost:3000
-- Backend: http://localhost:3001
-
-### Manual Setup
-
-If you prefer to run servers separately:
-
-**Frontend:**
-```bash
-cd front-end-new
-npm install
-npm run dev
-```
-
-**Backend:**
-```bash
-cd backend
-npm install
-npm run dev
-```
-
-## Usage
-
-### Chat Feature
-1. **Open the application** at http://localhost:3000
-2. **Click "Enter Chat Room"** or navigate to `/chat`
-3. **Enter your username** in the join modal
-4. **Start chatting** - messages are analyzed automatically
-5. **View fraud results** - each message shows a classification badge
-6. **Provide feedback** - use thumbs up/down buttons to rate accuracy
-
-### Video Call Feature
-1. **Open the application** at http://localhost:3000
-2. **Click "Start Voice Call"** or navigate to `/call`
-3. **Enter your username** in the join modal
-4. **Select a user** from the available users list
-5. **Choose call type** (audio or video)
-6. **Start the call** - audio will be analyzed in real-time
-7. **View fraud alerts** - real-time notifications during the call
-
-## Testing Fraud Detection
-
-### Text Messages:
-**Safe messages:**
-- "Hello, how are you today?"
-- "Let's meet for coffee tomorrow"
-
-**Fraudulent messages:**
-- "URGENT: Your account has been suspended! Click here to verify"
-- "You've won $1,000,000! Send your credit card details"
-- "I'm a Nigerian prince and need your bank account number"
-
-### Audio Calls:
-The system analyzes audio characteristics including:
-- Volume levels (high volume may indicate urgency)
-- Pitch patterns (unusual patterns may indicate fraud)
-- Speech speed (fast speech may indicate urgency)
-- Audio quality (poor quality may indicate recording)
+- **Real-time Chat**: Instant messaging with fraud detection
+- **Video/Audio Calls**: WebRTC-based calling with fraud analysis
+- **AI Fraud Detection**: 
+  - Text-based fraud detection using keyword analysis and pattern matching
+  - Audio-based fraud detection for voice calls
+  - Real-time alerts and confidence scoring
+- **User Management**: Join rooms and manage connections
+- **Responsive UI**: Modern, mobile-friendly interface
 
 ## Project Structure
 
 ```
 datathon-final/
-├── front-end-new/           # Next.js frontend
-│   ├── app/
-│   │   ├── chat/page.tsx    # Chat interface
-│   │   ├── call/page.tsx    # Video call interface
-│   │   └── globals.css      # Global styles
-│   ├── components/
-│   │   ├── ChatMessage.tsx  # Individual message component
-│   │   ├── ChatInput.tsx    # Message input component
-│   │   ├── UserJoinModal.tsx # Username entry modal
-│   │   ├── CallInterface.tsx # Video call interface
-│   │   └── CallSetup.tsx    # Call setup modal
-│   └── package.json
-├── backend/                  # Node.js backend
-│   ├── server.js            # Socket.IO server with WebRTC signaling
-│   ├── package.json
-│   └── README.md
-└── package.json             # Root package.json
+├── backend/           # Express.js + Socket.IO server
+│   ├── server.js      # Main server file
+│   └── package.json   # Backend dependencies
+└── front-end-new/     # Next.js frontend application
+    ├── app/           # Next.js app directory
+    ├── components/    # React components
+    └── package.json   # Frontend dependencies
 ```
 
-## API Endpoints
+## Prerequisites
 
-### Backend REST API
-- `GET /health` - Server health check
-- `GET /users` - List connected users
-- `GET /call-users` - List users available for calls
+- Node.js (v16 or higher)
+- npm or yarn
 
-### WebSocket Events
+## Installation & Setup
 
-**Chat Events:**
-- `joinRoom` - Join chat room
-- `sendMessage` - Send message
-- `sendFeedback` - Submit fraud detection feedback
+### 1. Install Backend Dependencies
 
-**Call Events:**
-- `joinCallRoom` - Join call room
-- `offer` - WebRTC offer
-- `answer` - WebRTC answer
-- `iceCandidate` - WebRTC ICE candidate
-- `callRequest` - Initiate call request
-- `callAccepted` - Accept call
-- `callRejected` - Reject call
-- `endCall` - End call
-- `audioChunk` - Send audio for analysis
+```bash
+cd backend
+npm install
+```
 
-**Server Events:**
-- `message` - New message received
-- `fraudResult` - Fraud analysis result (text or audio)
-- `feedbackUpdate` - Feedback count update
-- `userJoined` - User joined notification
-- `userLeft` - User left notification
+### 2. Install Frontend Dependencies
 
-## WebRTC Implementation
-
-### Signaling
-- Uses Socket.IO for WebRTC signaling
-- Handles offer/answer exchange
-- Manages ICE candidate exchange
-- Supports multiple concurrent calls
-
-### Media Handling
-- Peer-to-peer media streaming
-- Audio recording for fraud detection
-- Real-time audio processing
-- Automatic media cleanup
-
-### STUN Servers
-- Google STUN servers for NAT traversal
-- Supports both audio and video calls
-- Automatic fallback mechanisms
-
-## Customization
-
-### Fraud Detection Rules
-Edit `backend/server.js` to modify detection logic:
-
-**Text Detection:**
-- Add/remove keywords in `fraudKeywords` array
-- Adjust pattern matching in `suspiciousPatterns`
-- Modify scoring algorithm in `detectFraud()` function
-
-**Audio Detection:**
-- Modify `detectAudioFraud()` function
-- Adjust audio feature thresholds
-- Integrate with real ML models (LALM, etc.)
-
-### UI Styling
-- Modify Tailwind classes in component files
-- Update animations in `front-end-new/app/globals.css`
-- Customize color schemes and layouts
-
-## Development
-
-### Adding New Features
-1. **Frontend**: Add components in `front-end-new/components/`
-2. **Backend**: Extend `server.js` with new Socket.IO events
-3. **Styling**: Use Tailwind CSS classes for consistent design
-
-### Debugging
-- Frontend logs: Browser console
-- Backend logs: Terminal running `npm run dev:backend`
-- WebSocket: Use browser dev tools Network tab
-- WebRTC: Use browser dev tools WebRTC tab
-
-## Production Deployment
-
-### Frontend
 ```bash
 cd front-end-new
-npm run build
-npm start
+npm install
 ```
 
-### Backend
+## Running the Application
+
+### Option 1: Run Backend and Frontend Separately
+
+**Terminal 1 - Start Backend:**
 ```bash
 cd backend
 npm start
+# or for development with auto-restart:
+npm run dev
 ```
 
-Remember to:
-- Set environment variables
-- Configure CORS for production domains
-- Use a process manager like PM2
-- Set up proper SSL certificates
-- Configure TURN servers for WebRTC
+**Terminal 2 - Start Frontend:**
+```bash
+cd front-end-new
+npm run dev
+```
+
+### Option 2: Run Both with Concurrently (if installed globally)
+
+```bash
+# From project root
+concurrently "cd backend && npm start" "cd front-end-new && npm run dev"
+```
+
+## Access the Application
+
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:3001
+- **Health Check**: http://localhost:3001/health
+- **Connected Users**: http://localhost:3001/users
+
+## Usage
+
+### Chat Feature
+1. Open http://localhost:3000/chat
+2. Enter your username and join the chat room
+3. Start sending messages
+4. Fraud detection will analyze messages in real-time
+5. Alerts will appear for suspicious content
+
+### Call Feature
+1. Open http://localhost:3000/call
+2. Enter your username to join the call room
+3. Select a user to call (audio or video)
+4. Accept incoming calls
+5. Audio fraud detection runs during calls
+
+## Fraud Detection Features
+
+### Text Analysis
+- Keyword-based detection (passwords, credit cards, etc.)
+- Pattern matching (SSN, credit card numbers, phone numbers)
+- Urgency indicators analysis
+- Confidence scoring (0-100%)
+
+### Audio Analysis
+- Volume and pitch analysis
+- Speech speed detection
+- Audio quality assessment
+- Real-time processing during calls
+
+## API Endpoints
+
+### Backend API Routes
+- `GET /health` - Server health check
+- `GET /users` - Get connected users
+- `GET /call-users` - Get users available for calls
+
+### WebSocket Events
+- `joinRoom` - Join chat room
+- `joinCallRoom` - Join call room
+- `sendMessage` - Send chat message
+- `sendFeedback` - Send fraud detection feedback
+- `offer/answer/iceCandidate` - WebRTC signaling
+- `callRequest/callAccepted/callRejected` - Call management
+- `audioChunk` - Audio data for fraud analysis
+
+## Environment Variables
+
+### Backend (.env)
+```env
+PORT=3001
+NODE_ENV=development
+```
+
+### Frontend (.env.local)
+```env
+NEXT_PUBLIC_SOCKET_URL=http://localhost:3001
+```
+
+## Development
+
+### Backend Development
+- Uses Express.js for HTTP server
+- Socket.IO for real-time communication
+- CORS enabled for frontend communication
+- Modular fraud detection functions
+
+### Frontend Development
+- Next.js 15 with App Router
+- TypeScript for type safety
+- Tailwind CSS for styling
+- Socket.IO client for real-time features
+- WebRTC for peer-to-peer calls
+
+## Deployment
+
+### Backend Deployment
+- Can be deployed to any Node.js hosting service
+- Ensure WebSocket support
+- Set appropriate CORS origins
+
+### Frontend Deployment
+- Optimized for Vercel deployment
+- Static export available
+- Environment variables for production
 
 ## Security Considerations
 
-- **WebRTC Security**: Implement proper authentication
-- **Audio Privacy**: Ensure audio data is handled securely
-- **Fraud Detection**: Validate all inputs and outputs
-- **Rate Limiting**: Implement API rate limiting
-- **Data Encryption**: Use HTTPS/WSS in production
+- Fraud detection is for demonstration purposes
+- In production, implement proper authentication
+- Add rate limiting and input validation
+- Use HTTPS in production
+- Implement proper error handling
 
 ## Contributing
 
@@ -265,4 +183,4 @@ Remember to:
 
 ## License
 
-ISC License - see LICENSE file for details. 
+This project is for educational and demonstration purposes. 

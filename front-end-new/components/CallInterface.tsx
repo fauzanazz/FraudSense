@@ -28,6 +28,7 @@ interface CallInterfaceProps {
   onToggleMute: () => void;
   onToggleVideo: () => void;
   isConnected: boolean;
+  availableUsers: string[];
 }
 
 export default function CallInterface({
@@ -41,35 +42,13 @@ export default function CallInterface({
   onEndCall,
   onToggleMute,
   onToggleVideo,
-  isConnected
+  isConnected,
+  availableUsers
 }: CallInterfaceProps) {
-  const [availableUsers, setAvailableUsers] = useState<string[]>([]);
   const [selectedUser, setSelectedUser] = useState<string>('');
-  const [selectedCallType, setSelectedCallType] = useState<'audio' | 'video'>(callType);
   const audioVisualizerRef = useRef<HTMLCanvasElement>(null);
 
-  // Fetch available users
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const response = await fetch('http://localhost:3001/call-users');
-        const users = await response.json();
-        // Filter out current user and empty strings
-        const filteredUsers = users.filter((user: string) => 
-          user !== username && user && user.trim() !== ''
-        );
-        setAvailableUsers(filteredUsers);
-      } catch (error) {
-        console.error('Error fetching users:', error);
-      }
-    };
 
-    if (isConnected && !callState.isInCall) {
-      fetchUsers();
-      const interval = setInterval(fetchUsers, 5000); // Refresh every 5 seconds
-      return () => clearInterval(interval);
-    }
-  }, [isConnected, callState.isInCall, username]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -129,7 +108,7 @@ export default function CallInterface({
       {/* Header */}
       <div className="bg-gray-800 border-b border-gray-700 px-6 py-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Video Call</h1>
+          <h1 className="text-2xl font-bold">Audio Call</h1>
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
               <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
@@ -149,13 +128,13 @@ export default function CallInterface({
         <div className="flex-1 flex flex-col">
           {callState.isInCall ? (
             <>
-              {/* Remote Video */}
-              <div className="flex-1 relative bg-black">
-                <video
-                  ref={remoteVideoRef}
-                  autoPlay
-                  playsInline
-                  className="w-full h-full object-cover"
+              {/* Audio Visualizer */}
+              <div className="flex-1 relative bg-black flex items-center justify-center">
+                <canvas
+                  ref={audioVisualizerRef}
+                  width={400}
+                  height={200}
+                  className="border border-gray-600 rounded-lg"
                 />
                 
                 {/* Fraud Detection Alert */}
@@ -176,27 +155,10 @@ export default function CallInterface({
                   {formatTime(callState.callDuration)}
                 </div>
 
-                {/* Audio Visualizer */}
-                <div className="absolute bottom-4 left-4">
-                  <canvas
-                    ref={audioVisualizerRef}
-                    width={200}
-                    height={60}
-                    className="bg-black bg-opacity-50 rounded-lg"
-                  />
-                </div>
+
               </div>
 
-              {/* Local Video */}
-              <div className="absolute bottom-4 right-4 w-48 h-36 bg-black rounded-lg overflow-hidden border-2 border-white">
-                <video
-                  ref={localVideoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                />
-              </div>
+
             </>
           ) : (
             /* Call Setup Interface */
@@ -232,43 +194,23 @@ export default function CallInterface({
                   )}
                 </div>
 
-                {/* Call Type Selection */}
+                {/* Call Type - Audio Only */}
                 <div className="mb-6">
                   <label className="block text-sm font-medium mb-2">Call Type</label>
-                  <div className="flex space-x-4">
-                    <button
-                      onClick={() => setSelectedCallType('audio')}
-                      className={`flex-1 px-4 py-2 rounded-lg border ${
-                        selectedCallType === 'audio'
-                          ? 'bg-blue-600 border-blue-500'
-                          : 'bg-gray-800 border-gray-600 hover:bg-gray-700'
-                      }`}
-                    >
-                      <Mic className="w-4 h-4 mr-2" />
-                      Audio
-                    </button>
-                    <button
-                      onClick={() => setSelectedCallType('video')}
-                      className={`flex-1 px-4 py-2 rounded-lg border ${
-                        selectedCallType === 'video'
-                          ? 'bg-blue-600 border-blue-500'
-                          : 'bg-gray-800 border-gray-600 hover:bg-gray-700'
-                      }`}
-                    >
-                      <Video className="w-4 h-4 mr-2" />
-                      Video
-                    </button>
+                  <div className="px-4 py-2 bg-blue-600 border border-blue-500 rounded-lg text-center">
+                    <Mic className="w-4 h-4 mr-2 inline" />
+                    Audio Call
                   </div>
                 </div>
 
                 {/* Start Call Button */}
                 <button
-                  onClick={() => selectedUser && onInitiateCall(selectedUser, selectedCallType)}
+                  onClick={() => selectedUser && onInitiateCall(selectedUser, 'audio')}
                   disabled={!selectedUser || !isConnected || availableUsers.length === 0}
                   className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed font-medium"
                 >
                   <Phone className="w-5 h-5 mr-2 inline" />
-                  {availableUsers.length === 0 ? 'No Users Available' : 'Start Call'}
+                  {availableUsers.length === 0 ? 'No Users Available' : 'Start Audio Call'}
                 </button>
               </div>
             </div>
@@ -290,19 +232,7 @@ export default function CallInterface({
               {callState.isMuted ? <MicOff size={24} /> : <Mic size={24} />}
             </button>
 
-            {/* Video Toggle Button */}
-            {callType === 'video' && (
-              <button
-                onClick={onToggleVideo}
-                className={`p-4 rounded-full ${
-                  !callState.isVideoEnabled 
-                    ? 'bg-red-600 hover:bg-red-700' 
-                    : 'bg-gray-700 hover:bg-gray-600'
-                }`}
-              >
-                {callState.isVideoEnabled ? <Video size={24} /> : <VideoOff size={24} />}
-              </button>
-            )}
+
 
             {/* End Call Button */}
             <button

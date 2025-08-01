@@ -21,7 +21,7 @@ interface Message {
 interface ChatMessageProps {
   message: Message;
   isOwnMessage: boolean;
-  onFeedback: (messageId: string, type: 'thumbsUp' | 'thumbsDown') => void;
+  onFeedback?: (messageId: string, type: 'thumbsUp' | 'thumbsDown') => void;
 }
 
 export default function ChatMessage({ message, isOwnMessage, onFeedback }: ChatMessageProps) {
@@ -66,18 +66,15 @@ export default function ChatMessage({ message, isOwnMessage, onFeedback }: ChatM
             <p className="text-sm">{message.content}</p>
           </div>
           
-          {/* Fraud Detection Result */}
-          {message.fraudResult && (
-            <div className={`mt-2 inline-flex items-center space-x-2 px-3 py-1 rounded-full border text-xs font-medium ${getFraudBadgeColor(message.fraudResult.classification)}`}>
-              <span>{message.fraudResult.classification}</span>
-              <span className={`font-bold ${getConfidenceColor(message.fraudResult.confidence)}`}>
-                {Math.round(message.fraudResult.confidence * 100)}%
-              </span>
+          {/* Fraud Detection Indicator (only show if fraud detected) */}
+          {message.fraudResult && message.fraudResult.classification === 'Fraud' && (
+            <div className="mt-2 inline-flex items-center space-x-1 px-2 py-1 rounded-full border border-red-200 bg-red-50 text-xs font-medium text-red-700">
+              <span>⚠️ Fraud Detected</span>
             </div>
           )}
           
-          {/* Feedback Buttons */}
-          {message.fraudResult && (
+          {/* Feedback Buttons (only show if onFeedback is provided) */}
+          {message.fraudResult && onFeedback && (
             <div className="mt-2 flex items-center space-x-2">
               <button
                 onClick={() => onFeedback(message.id, 'thumbsUp')}

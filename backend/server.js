@@ -8,7 +8,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: ["http://localhost:3000", "https://fraud-sense-ps91.vercel.app"],
     methods: ["GET", "POST"]
   }
 });
@@ -135,6 +135,12 @@ io.on('connection', (socket) => {
     
     // Notify others in the room
     socket.to(room).emit('userJoined', { username, timestamp: new Date() });
+    
+    // Send updated user list to all users in the room
+    const roomUsers = Array.from(connectedUsers.values())
+      .filter(user => user.room === room)
+      .map(user => user.username);
+    io.to(room).emit('userList', roomUsers);
   });
 
   // Handle user joining call room
@@ -146,6 +152,24 @@ io.on('connection', (socket) => {
     
     // Notify others in the room
     socket.to(room).emit('userJoined', { username, timestamp: new Date() });
+    
+    // Send updated user list to all users in the room
+    const roomUsers = Array.from(connectedUsers.values())
+      .filter(user => user.room === room)
+      .map(user => user.username);
+    io.to(room).emit('userList', roomUsers);
+  });
+
+  // Handle getUserList request
+  socket.on('getUserList', () => {
+    const user = connectedUsers.get(socket.id);
+    if (!user) return;
+    
+    const roomUsers = Array.from(connectedUsers.values())
+      .filter(u => u.room === user.room)
+      .map(u => u.username);
+    
+    socket.emit('userList', roomUsers);
   });
   
   // Handle sending messages
@@ -296,13 +320,20 @@ io.on('connection', (socket) => {
     const user = connectedUsers.get(socket.id);
     if (user) {
       console.log(`${user.username} disconnected`);
+      const room = user.room;
       connectedUsers.delete(socket.id);
       
       // Notify others in the room
-      socket.to(user.room).emit('userLeft', { 
+      socket.to(room).emit('userLeft', { 
         username: user.username, 
         timestamp: new Date() 
       });
+      
+      // Send updated user list to remaining users in the room
+      const roomUsers = Array.from(connectedUsers.values())
+        .filter(u => u.room === room)
+        .map(u => u.username);
+      io.to(room).emit('userList', roomUsers);
     }
   });
 });
