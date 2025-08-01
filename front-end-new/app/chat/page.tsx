@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import io from 'socket.io-client';
 import ChatMessage from '@/components/ChatMessage';
 import ChatInput from '@/components/ChatInput';
 import UserJoinModal from '@/components/UserJoinModal';
+import FraudDialog from '@/components/FraudDialog';
 
 interface Message {
   id: string;
@@ -27,10 +28,16 @@ export default function ChatPage() {
   const [username, setUsername] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(true);
+  const [showFraudDialog, setShowFraudDialog] = useState(false);
+  const [fraudData, setFraudData] = useState<{
+    message: string;
+    username: string;
+    confidence: number;
+    timestamp: Date;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Connect to WebSocket server
     const newSocket = io('http://localhost:3001', {
       transports: ['websocket'],
     });
@@ -50,13 +57,32 @@ export default function ChatPage() {
     });
 
     newSocket.on('fraudResult', (data: { messageId: string; result: any }) => {
-      setMessages(prev => 
-        prev.map(msg => 
+      setMessages(prev => {
+        const updatedMessages = prev.map(msg => 
           msg.id === data.messageId 
             ? { ...msg, fraudResult: data.result }
             : msg
-        )
-      );
+        );
+
+        // Show fraud dialog if confidence > 50%
+        if (data.result.confidence > 0.5) {
+          console.log('🚨 Fraud detected with confidence:', data.result.confidence);
+          const message = updatedMessages.find(msg => msg.id === data.messageId);
+          if (message) {
+            console.log('📝 Found message:', message.content);
+            setFraudData({
+              message: message.content,
+              username: message.username,
+              confidence: data.result.confidence,
+              timestamp: message.timestamp
+            });
+            setShowFraudDialog(true);
+            console.log('🔔 Dialog should be shown now');
+          }
+        }
+
+        return updatedMessages;
+      });
     });
 
     newSocket.on('feedbackUpdate', (data: { messageId: string; feedback: any }) => {
@@ -77,7 +103,6 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
-    // Auto-scroll to bottom when new messages arrive
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -99,11 +124,16 @@ export default function ChatPage() {
     }
   };
 
-  const handleFeedback = (messageId: string, type: 'thumbsUp' | 'thumbsDown') => {
-    if (socket) {
-      socket.emit('sendFeedback', { messageId, type });
-    }
-  };
+  const handleCloseFraudDialog = useCallback(() => {
+    console.log('🔒 Closing fraud dialog');
+    setShowFraudDialog(false);
+    setFraudData(null);
+  }, []);
+
+  // Debug effect to monitor dialog state
+  useEffect(() => {
+    console.log('🔍 Dialog state:', { showFraudDialog, fraudData });
+  }, [showFraudDialog, fraudData]);
 
   if (showJoinModal) {
     return <UserJoinModal onJoin={handleJoinRoom} />;
@@ -141,7 +171,6 @@ export default function ChatPage() {
               key={message.id}
               message={message}
               isOwnMessage={message.username === username}
-              onFeedback={handleFeedback}
             />
           ))
         )}
@@ -152,6 +181,13 @@ export default function ChatPage() {
       <div className="bg-white border-t border-gray-200 px-6 py-4">
         <ChatInput onSendMessage={handleSendMessage} disabled={!isConnected} />
       </div>
+
+      {/* Fraud Dialog */}
+      <FraudDialog
+        isOpen={showFraudDialog}
+        onClose={handleCloseFraudDialog}
+        fraudData={fraudData}
+      />
     </div>
   );
 }
