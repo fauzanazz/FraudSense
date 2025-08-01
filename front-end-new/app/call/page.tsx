@@ -150,6 +150,14 @@ export default function CallPage() {
     };
   }, [callState.isInCall]);
 
+  // Monitor socket connection state
+  useEffect(() => {
+    if (socket) {
+      console.log('🔍 Socket connection state changed:', socket.connected);
+      setCallState(prev => ({ ...prev, isConnected: socket.connected }));
+    }
+  }, [socket]);
+
   const handleUserJoined = (data: { username: string }) => {
     console.log(`${data.username} joined the call room`);
     // Request updated user list
@@ -177,45 +185,55 @@ export default function CallPage() {
       setRemoteUser(data.from);
       setCallType(data.type);
       
-      // Wait for socket connection before sending acceptance
-      let retries = 0;
-      const maxRetries = 5;
+      // Get current socket instance directly
+      const currentSocket = socket;
+      console.log('🔍 Current socket state:', currentSocket ? 'Available' : 'Not available');
+      console.log('🔍 Socket connected:', currentSocket?.connected);
       
-      while (!socket && retries < maxRetries) {
-        console.log(`⏳ Waiting for socket before sending acceptance... (${retries + 1}/${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, 500));
-        retries++;
-      }
-      
-      // Send acceptance notification
-      if (socket) {
-        socket.emit('callAccepted', { to: data.from });
+      // Send acceptance notification immediately if socket is available
+      if (currentSocket && currentSocket.connected) {
+        currentSocket.emit('callAccepted', { to: data.from });
         console.log('📤 Call accepted notification sent');
+        
+        // Initialize call after sending acceptance
+        console.log('🔧 Starting call initialization...');
+        await initializeCall();
       } else {
-        console.error('❌ Socket not available for sending acceptance');
-        alert('Connection lost. Please refresh the page and try again.');
-        return;
+        console.error('❌ Socket not available or not connected');
+        console.log('🔍 Socket object:', currentSocket);
+        console.log('🔍 Socket connected state:', currentSocket?.connected);
+        
+        // Try to reconnect and retry
+        console.log('🔄 Attempting to reconnect...');
+        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000';
+        const newSocket = io(socketUrl);
+        
+        newSocket.on('connect', async () => {
+          console.log('✅ Reconnected to signaling server');
+          newSocket.emit('callAccepted', { to: data.from });
+          console.log('📤 Call accepted notification sent after reconnect');
+          
+          // Set the new socket and initialize call
+          setSocket(newSocket);
+          await initializeCall();
+        });
+        
+        newSocket.on('connect_error', (error: any) => {
+          console.error('❌ Reconnection failed:', error);
+          alert('Connection lost. Please refresh the page and try again.');
+        });
       }
-      
-      // Initialize call after sending acceptance
-      console.log('🔧 Starting call initialization...');
-      await initializeCall();
     } else {
       console.log('❌ Call rejected');
       
-      // Wait for socket connection before sending rejection
-      let retries = 0;
-      const maxRetries = 5;
+      // Get current socket instance directly
+      const currentSocket = socket;
       
-      while (!socket && retries < maxRetries) {
-        console.log(`⏳ Waiting for socket before sending rejection... (${retries + 1}/${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, 500));
-        retries++;
-      }
-      
-      if (socket) {
-        socket.emit('callRejected', { to: data.from });
+      if (currentSocket && currentSocket.connected) {
+        currentSocket.emit('callRejected', { to: data.from });
         console.log('📤 Call rejected notification sent');
+      } else {
+        console.log('⚠️ Socket not available for rejection, but call was already rejected by user');
       }
     }
   };
@@ -243,18 +261,15 @@ export default function CallPage() {
     try {
       console.log('🔧 Initializing audio call...');
       
-      // Wait for socket connection with retry
-      let retries = 0;
-      const maxRetries = 5;
+      // Get current socket instance directly
+      const currentSocket = socket;
+      console.log('🔍 Current socket state:', currentSocket ? 'Available' : 'Not available');
+      console.log('🔍 Socket connected:', currentSocket?.connected);
       
-      while (!socket && retries < maxRetries) {
-        console.log(`⏳ Waiting for socket connection... (${retries + 1}/${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        retries++;
-      }
-      
-      if (!socket) {
-        console.error('❌ Socket not available after retries');
+      if (!currentSocket || !currentSocket.connected) {
+        console.error('❌ Socket not available or not connected');
+        console.log('🔍 Socket object:', currentSocket);
+        console.log('🔍 Socket connected state:', currentSocket?.connected);
         alert('Connection lost. Please refresh the page and try again.');
         return;
       }
@@ -299,9 +314,9 @@ export default function CallPage() {
 
       // Handle ICE candidates
       peerConnection.onicecandidate = (event) => {
-        if (event.candidate && socket) {
+        if (event.candidate && currentSocket && currentSocket.connected) {
           console.log('🧊 Sending ICE candidate during initialization');
-          socket.emit('iceCandidate', {
+          currentSocket.emit('iceCandidate', {
             to: remoteUser,
             candidate: event.candidate
           });
@@ -453,9 +468,13 @@ export default function CallPage() {
     try {
       console.log('📥 Received audio offer from:', data.from);
       
-      // Check socket connection - be more lenient
-      if (!socket) {
-        console.error('❌ Socket not available when handling offer');
+      // Get current socket instance directly
+      const currentSocket = socket;
+      console.log('🔍 Current socket state in handleOffer:', currentSocket ? 'Available' : 'Not available');
+      console.log('🔍 Socket connected in handleOffer:', currentSocket?.connected);
+      
+      if (!currentSocket || !currentSocket.connected) {
+        console.error('❌ Socket not available or not connected when handling offer');
         return;
       }
 
@@ -492,9 +511,9 @@ export default function CallPage() {
 
       // Handle ICE candidates
       peerConnection.onicecandidate = (event) => {
-        if (event.candidate && socket) {
+        if (event.candidate && currentSocket && currentSocket.connected) {
           console.log('🧊 Sending ICE candidate from offer');
-          socket.emit('iceCandidate', {
+          currentSocket.emit('iceCandidate', {
             to: data.from,
             candidate: event.candidate
           });
@@ -519,14 +538,14 @@ export default function CallPage() {
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
 
-      if (socket) {
-        socket.emit('answer', {
+      if (currentSocket && currentSocket.connected) {
+        currentSocket.emit('answer', {
           to: data.from,
           answer: answer
         });
         console.log('📤 Answer sent to:', data.from);
       } else {
-        console.error('❌ Socket not available when sending answer');
+        console.error('❌ Socket not available or not connected when sending answer');
         endCall();
       }
 
@@ -564,18 +583,15 @@ export default function CallPage() {
     try {
       console.log('🚀 Initiating audio call to:', targetUser);
       
-      // Wait for socket connection with retry
-      let retries = 0;
-      const maxRetries = 5;
+      // Get current socket instance directly
+      const currentSocket = socket;
+      console.log('🔍 Current socket state:', currentSocket ? 'Available' : 'Not available');
+      console.log('🔍 Socket connected:', currentSocket?.connected);
       
-      while (!socket && retries < maxRetries) {
-        console.log(`⏳ Waiting for socket connection... (${retries + 1}/${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        retries++;
-      }
-      
-      if (!socket) {
-        console.error('❌ Socket not available after retries');
+      if (!currentSocket || !currentSocket.connected) {
+        console.error('❌ Socket not available or not connected');
+        console.log('🔍 Socket object:', currentSocket);
+        console.log('🔍 Socket connected state:', currentSocket?.connected);
         alert('Connection lost. Please refresh the page and try again.');
         return;
       }
