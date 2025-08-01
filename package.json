@@ -1,28 +1,29 @@
 {
-  "name": "datathon-final",
+  "name": "fraud-detection-app",
   "version": "1.0.0",
-  "description": "Real-time chat application with fraud detection",
+  "description": "Real-time chat and call application with fraud detection",
+  "main": "index.js",
   "scripts": {
+    "install:all": "npm install && cd backend && npm install && cd ../front-end-new && npm install",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:frontend": "cd front-end-new && npm run dev",
     "dev:backend": "cd backend && npm run dev",
-    "install:all": "npm install && cd front-end-new && npm install && cd ../backend && npm install",
-    "build": "cd front-end-new && npm run build",
-    "start": "cd backend && npm start"
-  },
-  "devDependencies": {
-    "concurrently": "^8.2.2"
+    "dev:frontend": "cd front-end-new && npm run dev",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:backend": "cd backend && npm start",
+    "start:frontend": "cd front-end-new && npm start",
+    "build": "cd front-end-new && npm run build"
   },
   "keywords": [
-    "chat",
-    "websocket",
     "fraud-detection",
-    "nextjs",
-    "socket.io"
+    "chat",
+    "video-call",
+    "socket.io",
+    "next.js",
+    "webrtc"
   ],
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "socket.io-client": "^4.8.1"
+  "devDependencies": {
+    "concurrently": "^8.2.2"
   }
 }
