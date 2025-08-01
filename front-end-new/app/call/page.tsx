@@ -164,25 +164,54 @@ export default function CallPage() {
       console.log('✅ Call accepted');
       setRemoteUser(data.from);
       setCallType(data.type);
-      if (socket && socket.connected) {
+      if (socket) {
         socket.emit('callAccepted', { to: data.from });
         console.log('📤 Call accepted notification sent');
       }
-      initializeCall();
+      // Initialize call after accepting
+      setTimeout(() => {
+        initializeCall();
+      }, 1000); // Small delay to ensure notifications are sent
     } else {
       console.log('❌ Call rejected');
-      if (socket && socket.connected) {
+      if (socket) {
         socket.emit('callRejected', { to: data.from });
         console.log('📤 Call rejected notification sent');
       }
     }
   };
 
-  const handleCallAccepted = (data: { from: string }) => {
+  const handleCallAccepted = async (data: { from: string }) => {
     console.log('✅ Call accepted by:', data.from);
     setRemoteUser(data.from);
     setCallState(prev => ({ ...prev, isInCall: true }));
     setShowSetup(false);
+    
+    // Send offer after call is accepted
+    try {
+      console.log('📤 Creating and sending offer after acceptance...');
+      
+      if (!peerConnectionRef.current) {
+        console.error('❌ No peer connection available');
+        return;
+      }
+      
+      // Create and send offer
+      const offer = await peerConnectionRef.current.createOffer();
+      await peerConnectionRef.current.setLocalDescription(offer);
+
+      if (socket) {
+        socket.emit('offer', {
+          to: data.from,
+          offer: offer
+        });
+        console.log('📤 Offer sent to:', data.from);
+      } else {
+        console.error('❌ Socket not available when sending offer');
+      }
+    } catch (error) {
+      console.error('❌ Error sending offer after acceptance:', error);
+    }
   };
 
   const handleCallRejected = (data: { from: string }) => {
@@ -201,8 +230,8 @@ export default function CallPage() {
       console.log('🔧 Initializing call...');
       
       // Check socket connection
-      if (!socket || !socket.connected) {
-        console.error('❌ Socket not connected during initialization');
+      if (!socket) {
+        console.error('❌ Socket not available during initialization');
         alert('Connection lost. Please refresh the page.');
         return;
       }
@@ -247,7 +276,7 @@ export default function CallPage() {
 
       // Handle ICE candidates
       peerConnection.onicecandidate = (event) => {
-        if (event.candidate && socket && socket.connected) {
+        if (event.candidate && socket) {
           console.log('🧊 Sending ICE candidate during initialization');
           socket.emit('iceCandidate', {
             to: remoteUser,
@@ -401,9 +430,9 @@ export default function CallPage() {
     try {
       console.log('📥 Received offer from:', data.from);
       
-      // Check socket connection
-      if (!socket || !socket.connected) {
-        console.error('❌ Socket not connected when handling offer');
+      // Check socket connection - be more lenient
+      if (!socket) {
+        console.error('❌ Socket not available when handling offer');
         return;
       }
 
@@ -438,7 +467,7 @@ export default function CallPage() {
 
       // Handle ICE candidates
       peerConnection.onicecandidate = (event) => {
-        if (event.candidate && socket && socket.connected) {
+        if (event.candidate && socket) {
           console.log('🧊 Sending ICE candidate from offer');
           socket.emit('iceCandidate', {
             to: data.from,
@@ -465,14 +494,14 @@ export default function CallPage() {
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
 
-      if (socket && socket.connected) {
+      if (socket) {
         socket.emit('answer', {
           to: data.from,
           answer: answer
         });
         console.log('📤 Answer sent to:', data.from);
       } else {
-        console.error('❌ Socket not connected when sending answer');
+        console.error('❌ Socket not available when sending answer');
         endCall();
       }
 
@@ -511,8 +540,8 @@ export default function CallPage() {
       console.log('🚀 Initiating call to:', targetUser, 'Type:', type);
       
       // Check socket connection
-      if (!socket || !socket.connected) {
-        console.error('❌ Socket not connected');
+      if (!socket) {
+        console.error('❌ Socket not available');
         alert('Connection lost. Please refresh the page.');
         return;
       }
@@ -523,10 +552,17 @@ export default function CallPage() {
         return;
       }
 
-      // Set call state first
+      // Send call request first
+      console.log('📞 Sending call request...');
+      socket.emit('callRequest', {
+        to: targetUser,
+        type: type
+      });
+      console.log('📤 Call request sent to:', targetUser);
+
+      // Set call state
       setRemoteUser(targetUser);
       setCallType(type);
-      setCallState(prev => ({ ...prev, isInCall: true }));
       
       console.log('📱 Getting user media...');
       
@@ -570,7 +606,7 @@ export default function CallPage() {
 
       // Handle ICE candidates
       peerConnection.onicecandidate = (event) => {
-        if (event.candidate && socket && socket.connected) {
+        if (event.candidate && socket) {
           console.log('🧊 Sending ICE candidate');
           socket.emit('iceCandidate', {
             to: targetUser,
@@ -590,28 +626,10 @@ export default function CallPage() {
         }
       };
 
-      console.log('📤 Creating and sending offer...');
-      
-      // Create and send offer
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-
-      if (socket && socket.connected) {
-        socket.emit('offer', {
-          to: targetUser,
-          offer: offer
-        });
-        console.log('📤 Offer sent to:', targetUser);
-      } else {
-        console.error('❌ Socket not connected when sending offer');
-        endCall();
-        return;
-      }
-
       // Start audio processing
       startAudioProcessing(stream);
       
-      console.log('✅ Call initiation completed');
+      console.log('✅ Call initiation completed - waiting for acceptance');
 
     } catch (error) {
       console.error('❌ Error initiating call:', error);
@@ -668,7 +686,7 @@ export default function CallPage() {
     setRemoteUser('');
 
     // Notify server
-    if (socket && socket.connected && remoteUser) {
+    if (socket && remoteUser) {
       socket.emit('endCall', { to: remoteUser });
       console.log('📤 End call notification sent');
     }
