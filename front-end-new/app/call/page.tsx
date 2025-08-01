@@ -158,59 +158,63 @@ export default function CallPage() {
   };
 
   const handleCallRequest = (data: { from: string; type: 'audio' | 'video' }) => {
+    console.log('📞 Call request from:', data.from, 'Type:', data.type);
     const accepted = window.confirm(`${data.from} wants to start a ${data.type} call. Accept?`);
     if (accepted) {
+      console.log('✅ Call accepted');
       setRemoteUser(data.from);
       setCallType(data.type);
-      if (socket) {
+      if (socket && socket.connected) {
         socket.emit('callAccepted', { to: data.from });
+        console.log('📤 Call accepted notification sent');
       }
       initializeCall();
     } else {
-      if (socket) {
+      console.log('❌ Call rejected');
+      if (socket && socket.connected) {
         socket.emit('callRejected', { to: data.from });
+        console.log('📤 Call rejected notification sent');
       }
     }
   };
 
   const handleCallAccepted = (data: { from: string }) => {
+    console.log('✅ Call accepted by:', data.from);
     setRemoteUser(data.from);
     setCallState(prev => ({ ...prev, isInCall: true }));
     setShowSetup(false);
   };
 
   const handleCallRejected = (data: { from: string }) => {
+    console.log('❌ Call rejected by:', data.from);
     alert(`${data.from} rejected your call`);
     endCall();
   };
 
   const handleCallEnded = (data: { from: string }) => {
-    console.log(`${data.from} ended the call`);
+    console.log('📞 Call ended by:', data.from);
     endCall();
   };
 
   const initializeCall = async () => {
     try {
-      // Wait for socket to be connected
-      let retries = 0;
-      while (!socket && retries < 10) {
-        console.log('Waiting for socket connection...', retries);
-        await new Promise(resolve => setTimeout(resolve, 500));
-        retries++;
-      }
-
-      if (!socket) {
-        console.error('Socket not connected after retries');
+      console.log('🔧 Initializing call...');
+      
+      // Check socket connection
+      if (!socket || !socket.connected) {
+        console.error('❌ Socket not connected during initialization');
         alert('Connection lost. Please refresh the page.');
         return;
       }
 
       // Get user media
+      console.log('📱 Getting user media...');
       const stream = await navigator.mediaDevices.getUserMedia({
         video: callType === 'video',
         audio: true
       });
 
+      console.log('✅ Media stream obtained');
       localStreamRef.current = stream;
       
       if (localVideoRef.current) {
@@ -218,6 +222,7 @@ export default function CallPage() {
       }
 
       // Create peer connection
+      console.log('🔗 Creating peer connection...');
       const peerConnection = new RTCPeerConnection({
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
@@ -234,6 +239,7 @@ export default function CallPage() {
 
       // Handle incoming tracks
       peerConnection.ontrack = (event) => {
+        console.log('📹 Remote stream received during initialization');
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
         }
@@ -241,11 +247,23 @@ export default function CallPage() {
 
       // Handle ICE candidates
       peerConnection.onicecandidate = (event) => {
-        if (event.candidate && socket) {
+        if (event.candidate && socket && socket.connected) {
+          console.log('🧊 Sending ICE candidate during initialization');
           socket.emit('iceCandidate', {
             to: remoteUser,
             candidate: event.candidate
           });
+        }
+      };
+
+      // Handle connection state changes
+      peerConnection.onconnectionstatechange = () => {
+        console.log('🔗 Connection state during initialization:', peerConnection.connectionState);
+        if (peerConnection.connectionState === 'connected') {
+          console.log('✅ WebRTC connection established during initialization');
+        } else if (peerConnection.connectionState === 'failed') {
+          console.error('❌ WebRTC connection failed during initialization');
+          endCall();
         }
       };
 
@@ -254,10 +272,13 @@ export default function CallPage() {
 
       setCallState(prev => ({ ...prev, isInCall: true }));
       setShowSetup(false);
+      
+      console.log('✅ Call initialization completed');
 
     } catch (error) {
-      console.error('Error initializing call:', error);
+      console.error('❌ Error initializing call:', error);
       alert('Failed to access camera/microphone');
+      endCall();
     }
   };
 
@@ -378,19 +399,18 @@ export default function CallPage() {
 
   const handleOffer = async (data: { from: string; offer: RTCSessionDescriptionInit }) => {
     try {
-      // Wait for socket to be connected
-      let retries = 0;
-      while (!socket && retries < 10) {
-        console.log('Waiting for socket connection...', retries);
-        await new Promise(resolve => setTimeout(resolve, 500));
-        retries++;
-      }
-
-      if (!socket) {
-        console.error('Socket not connected after retries');
-        alert('Connection lost. Please refresh the page.');
+      console.log('📥 Received offer from:', data.from);
+      
+      // Check socket connection
+      if (!socket || !socket.connected) {
+        console.error('❌ Socket not connected when handling offer');
         return;
       }
+
+      // Set call state
+      setRemoteUser(data.from);
+      setCallState(prev => ({ ...prev, isInCall: true }));
+      setShowSetup(false);
 
       const peerConnection = new RTCPeerConnection({
         iceServers: [
@@ -410,6 +430,7 @@ export default function CallPage() {
 
       // Handle incoming tracks
       peerConnection.ontrack = (event) => {
+        console.log('📹 Remote stream received from offer');
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
         }
@@ -417,7 +438,8 @@ export default function CallPage() {
 
       // Handle ICE candidates
       peerConnection.onicecandidate = (event) => {
-        if (event.candidate && socket) {
+        if (event.candidate && socket && socket.connected) {
+          console.log('🧊 Sending ICE candidate from offer');
           socket.emit('iceCandidate', {
             to: data.from,
             candidate: event.candidate
@@ -425,55 +447,72 @@ export default function CallPage() {
         }
       };
 
+      // Handle connection state changes
+      peerConnection.onconnectionstatechange = () => {
+        console.log('🔗 Connection state from offer:', peerConnection.connectionState);
+        if (peerConnection.connectionState === 'connected') {
+          console.log('✅ WebRTC connection established from offer');
+        } else if (peerConnection.connectionState === 'failed') {
+          console.error('❌ WebRTC connection failed from offer');
+          endCall();
+        }
+      };
+
+      console.log('📤 Setting remote description and creating answer...');
+      
       // Set remote description and create answer
       await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
 
-      if (socket) {
+      if (socket && socket.connected) {
         socket.emit('answer', {
           to: data.from,
           answer: answer
         });
+        console.log('📤 Answer sent to:', data.from);
+      } else {
+        console.error('❌ Socket not connected when sending answer');
+        endCall();
       }
 
     } catch (error) {
-      console.error('Error handling offer:', error);
+      console.error('❌ Error handling offer:', error);
+      endCall();
     }
   };
 
   const handleAnswer = async (data: { from: string; answer: RTCSessionDescriptionInit }) => {
     try {
+      console.log('📥 Received answer from:', data.from);
       if (peerConnectionRef.current) {
         await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
+        console.log('✅ Remote description set from answer');
       }
     } catch (error) {
-      console.error('Error handling answer:', error);
+      console.error('❌ Error handling answer:', error);
     }
   };
 
   const handleIceCandidate = async (data: { from: string; candidate: RTCIceCandidateInit }) => {
     try {
+      console.log('🧊 Received ICE candidate from:', data.from);
       if (peerConnectionRef.current) {
         await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+        console.log('✅ ICE candidate added');
       }
     } catch (error) {
-      console.error('Error handling ICE candidate:', error);
+      console.error('❌ Error handling ICE candidate:', error);
     }
   };
 
   const initiateCall = async (targetUser: string, type: 'audio' | 'video') => {
     try {
-      // Wait for socket to be connected
-      let retries = 0;
-      while (!socket && retries < 10) {
-        console.log('Waiting for socket connection...', retries);
-        await new Promise(resolve => setTimeout(resolve, 500));
-        retries++;
-      }
-
-      if (!socket) {
-        console.error('Socket not connected after retries');
+      console.log('🚀 Initiating call to:', targetUser, 'Type:', type);
+      
+      // Check socket connection
+      if (!socket || !socket.connected) {
+        console.error('❌ Socket not connected');
         alert('Connection lost. Please refresh the page.');
         return;
       }
@@ -484,8 +523,12 @@ export default function CallPage() {
         return;
       }
 
+      // Set call state first
       setRemoteUser(targetUser);
       setCallType(type);
+      setCallState(prev => ({ ...prev, isInCall: true }));
+      
+      console.log('📱 Getting user media...');
       
       // Get user media first
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -493,12 +536,15 @@ export default function CallPage() {
         audio: true
       });
 
+      console.log('✅ Media stream obtained');
       localStreamRef.current = stream;
       
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
 
+      console.log('🔗 Creating peer connection...');
+      
       // Create peer connection
       const peerConnection = new RTCPeerConnection({
         iceServers: [
@@ -516,6 +562,7 @@ export default function CallPage() {
 
       // Handle incoming tracks
       peerConnection.ontrack = (event) => {
+        console.log('📹 Remote stream received');
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
         }
@@ -523,7 +570,8 @@ export default function CallPage() {
 
       // Handle ICE candidates
       peerConnection.onicecandidate = (event) => {
-        if (event.candidate && socket) {
+        if (event.candidate && socket && socket.connected) {
+          console.log('🧊 Sending ICE candidate');
           socket.emit('iceCandidate', {
             to: targetUser,
             candidate: event.candidate
@@ -531,66 +579,98 @@ export default function CallPage() {
         }
       };
 
+      // Handle connection state changes
+      peerConnection.onconnectionstatechange = () => {
+        console.log('🔗 Connection state:', peerConnection.connectionState);
+        if (peerConnection.connectionState === 'connected') {
+          console.log('✅ WebRTC connection established');
+        } else if (peerConnection.connectionState === 'failed') {
+          console.error('❌ WebRTC connection failed');
+          endCall();
+        }
+      };
+
+      console.log('📤 Creating and sending offer...');
+      
       // Create and send offer
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
 
-      if (socket) {
+      if (socket && socket.connected) {
         socket.emit('offer', {
           to: targetUser,
           offer: offer
         });
+        console.log('📤 Offer sent to:', targetUser);
+      } else {
+        console.error('❌ Socket not connected when sending offer');
+        endCall();
+        return;
       }
 
       // Start audio processing
       startAudioProcessing(stream);
+      
+      console.log('✅ Call initiation completed');
 
     } catch (error) {
-      console.error('Error initiating call:', error);
-      alert('Failed to access camera/microphone');
+      console.error('❌ Error initiating call:', error);
+      alert('Failed to access camera/microphone or start call');
+      endCall();
     }
   };
 
   const endCall = () => {
+    console.log('📞 Ending call...');
+    
     // Stop all tracks
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log('🛑 Stopped track:', track.kind);
+      });
     }
 
     // Close peer connection
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
+      console.log('🔗 Peer connection closed');
     }
 
     // Stop media recorder
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
+      console.log('🎙️ Media recorder stopped');
     }
 
     // Close audio context
     if (audioContextRef.current) {
       audioContextRef.current.close();
+      console.log('🎵 Audio context closed');
     }
 
     // Clear timer
     if (callTimerRef.current) {
       clearInterval(callTimerRef.current);
+      console.log('⏱️ Call timer cleared');
     }
 
-    // Reset state
-    setCallState({
+    // Reset call state but keep socket connection
+    setCallState(prev => ({
+      ...prev,
       isInCall: false,
-      isConnected: false,
       isMuted: false,
       isVideoEnabled: true,
       callDuration: 0,
-    });
+    }));
+    
     setShowSetup(true);
     setRemoteUser('');
 
     // Notify server
-    if (socket && remoteUser) {
+    if (socket && socket.connected && remoteUser) {
       socket.emit('endCall', { to: remoteUser });
+      console.log('📤 End call notification sent');
     }
 
     // Clear video elements
@@ -600,6 +680,8 @@ export default function CallPage() {
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
     }
+    
+    console.log('✅ Call ended successfully');
   };
 
   const toggleMute = () => {
