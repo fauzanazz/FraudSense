@@ -28,10 +28,11 @@ export default function Home() {
                   <MessageCircle className="h-5 w-5 text-blue-600" />
                   <span className="text-gray-700">Real-time chat with fraud detection</span>
                 </div>
-                <div className="flex items-center space-x-3">
-                  <Phone className="h-5 w-5 text-green-600" />
-                  <span className="text-gray-700">Audio/video calls with live monitoring</span>
-                </div>
+
+                                  <div className="flex items-center space-x-3">
+                    <Phone className="h-5 w-5 text-green-600" />
+                    <span className="text-gray-700">Voice calls with WebRTC</span>
+                  </div>
                 <div className="flex items-center space-x-3">
                   <Activity className="h-5 w-5 text-red-600" />
                   <span className="text-gray-700">Instant fraud alerts and classification</span>
@@ -81,10 +82,11 @@ export default function Home() {
                 <ul className="text-sm text-blue-700 space-y-1">
                   <li>• Open another browser window/tab</li>
                   <li>• Join with different username</li>
-                  <li>• Initiate audio or video call</li>
-                  <li>• Speak during calls to test audio detection</li>
+                  <li>• Enter target username and click call</li>
+                  <li>• Allow microphone access</li>
                 </ul>
               </div>
+
             </div>
           </div>
 

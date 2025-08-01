@@ -1,744 +1,263 @@
-'use client';
-
-import { useState, useEffect, useRef } from 'react';
+'use client'
+import { useEffect, useRef, useState } from 'react';
 import io from 'socket.io-client';
-import CallInterface from '@/components/CallInterface';
-import CallSetup from '@/components/CallSetup';
 
-interface CallState {
-  isInCall: boolean;
-  isConnected: boolean;
-  isMuted: boolean;
-  isVideoEnabled: boolean;
-  callDuration: number;
-  fraudResult?: {
-    classification: 'Safe' | 'Fraud Detected';
-    confidence: number;
-    timestamp: Date;
-  };
-}
-
-export default function CallPage() {
-  const [socket, setSocket] = useState<any>(null);
-  const [callState, setCallState] = useState<CallState>({
-    isInCall: false,
-    isConnected: false,
-    isMuted: false,
-    isVideoEnabled: true,
-    callDuration: 0,
-  });
-  const [username, setUsername] = useState<string>('');
-  const [showSetup, setShowSetup] = useState(true);
-  const [remoteUser, setRemoteUser] = useState<string>('');
-  const [callType, setCallType] = useState<'audio' | 'video'>('audio');
-  const [availableUsers, setAvailableUsers] = useState<string[]>([]);
-  
+export default function Home() {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const socketRef = useRef<any>(null);
+  
+  const [username, setUsername] = useState('');
+  const [targetUser, setTargetUser] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
+  const [isInRoom, setIsInRoom] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState<string[]>([]);
+  const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'receiving' | 'connected'>('idle');
+  const [currentCaller, setCurrentCaller] = useState('');
 
   useEffect(() => {
-    // Initialize WebSocket connection
-    const newSocket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001', {
-      transports: ['websocket'],
+    // Initialize socket connection
+    const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001');
+    socketRef.current = socket;
+
+    // Connection events
+    socket.on('connect', () => {
+      setIsConnected(true);
+      console.log('✅ Connected to server');
     });
 
+    socket.on('disconnect', () => {
+      setIsConnected(false);
+      setIsInRoom(false);
+      console.log('❌ Disconnected from server');
+    });
 
+    // Room events
+    socket.on('joinedRoom', (data: { username: string; room: string; users: string[] }) => {
+      setIsInRoom(true);
+      setAvailableUsers(data.users.filter(user => user !== username));
+      console.log('✅ Joined room successfully');
+    });
 
-    newSocket.on('disconnect', () => {
-      setCallState(prev => ({ ...prev, isConnected: false }));
-      console.log('❌ Disconnected from signaling server');
+    socket.on('userList', (users: string[]) => {
+      setAvailableUsers(users);
+      console.log('👥 Updated user list:', users);
+    });
+
+    socket.on('userJoined', (data: { username: string }) => {
+      console.log('👋', data.username, 'joined the room');
+    });
+
+    socket.on('userLeft', (data: { username: string }) => {
+      console.log('👋', data.username, 'left the room');
+    });
+
+    // Call events
+    socket.on('receive-call', async (data: { from: string; offer: RTCSessionDescriptionInit }) => {
+      console.log('📞 Incoming call from:', data.from);
+      setCurrentCaller(data.from);
+      setCallStatus('receiving');
       
-      // Auto-reconnect after 3 seconds
-      setTimeout(() => {
-        if (!socket?.connected) {
-          console.log('🔄 Attempting to reconnect...');
-          newSocket.connect();
-        }
-      }, 3000);
-    });
-
-    newSocket.on('connect_error', (error: any) => {
-      console.error('❌ Connection error:', error);
-      setCallState(prev => ({ ...prev, isConnected: false }));
-    });
-
-    newSocket.on('reconnect', () => {
-      console.log('✅ Reconnected to signaling server');
-      setCallState(prev => ({ ...prev, isConnected: true }));
-    });
-
-    // Signaling events
-    newSocket.on('offer', handleOffer);
-    newSocket.on('answer', handleAnswer);
-    newSocket.on('iceCandidate', handleIceCandidate);
-    newSocket.on('userJoined', handleUserJoined);
-    newSocket.on('userLeft', handleUserLeft);
-    newSocket.on('callRequest', handleCallRequest);
-    newSocket.on('callAccepted', handleCallAccepted);
-    newSocket.on('callRejected', handleCallRejected);
-    newSocket.on('callEnded', handleCallEnded);
-
-    // Audio fraud detection results
-    newSocket.on('fraudResult', (data: { classification: string; confidence: number }) => {
-      setCallState(prev => ({
-        ...prev,
-        fraudResult: {
-          classification: data.classification as 'Safe' | 'Fraud Detected',
-          confidence: data.confidence,
-          timestamp: new Date(),
-        }
-      }));
-    });
-
-    // User list updates
-    newSocket.on('userList', (users: string[]) => {
-      const filteredUsers = users.filter(user => user !== username && user && user.trim() !== '');
-      setAvailableUsers(filteredUsers);
-    });
-
-    // Request user list when connected
-    newSocket.on('connect', () => {
-      setCallState(prev => ({ ...prev, isConnected: true }));
-      console.log('✅ Connected to signaling server');
-      // Request current user list
-      newSocket.emit('getUserList');
-    });
-
-    // Handle disconnection
-    newSocket.on('disconnect', () => {
-      setCallState(prev => ({ ...prev, isConnected: false }));
-      console.log('❌ Disconnected from signaling server');
-    });
-
-    // Handle connection errors
-    newSocket.on('connect_error', (error: any) => {
-      console.error('❌ Connection error:', error);
-      setCallState(prev => ({ ...prev, isConnected: false }));
-    });
-
-    setSocket(newSocket);
-
-    return () => {
-      newSocket.close();
-    };
-  }, []);
-
-  useEffect(() => {
-    // Call timer
-    if (callState.isInCall) {
-      callTimerRef.current = setInterval(() => {
-        setCallState(prev => ({
-          ...prev,
-          callDuration: prev.callDuration + 1
-        }));
-      }, 1000);
-    } else {
-      if (callTimerRef.current) {
-        clearInterval(callTimerRef.current);
+      const accept = window.confirm(`Incoming call from ${data.from}. Accept?`);
+      if (accept) {
+        await handleIncomingCall(data.from, data.offer);
+      } else {
+        setCallStatus('idle');
+        setCurrentCaller('');
       }
-    }
+    });
 
-    return () => {
-      if (callTimerRef.current) {
-        clearInterval(callTimerRef.current);
+    socket.on('call-answered', async (data: { answer: RTCSessionDescriptionInit }) => {
+      console.log('✅ Call answered');
+      if (peerConnectionRef.current) {
+        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
+        setCallStatus('connected');
       }
-    };
-  }, [callState.isInCall]);
+    });
 
-  // Monitor socket connection state
-  useEffect(() => {
-    if (socket) {
-      console.log('🔍 Socket connection state changed:', socket.connected);
-      setCallState(prev => ({ ...prev, isConnected: socket.connected }));
-    }
-  }, [socket]);
+    socket.on('ice-candidate', async (data: { candidate: RTCIceCandidateInit }) => {
+      console.log('🧊 Received ICE candidate');
+      if (peerConnectionRef.current) {
+        try {
+          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+        } catch (error) {
+          console.error('Error adding ICE candidate:', error);
+        }
+      }
+    });
 
-  const handleUserJoined = (data: { username: string }) => {
-    console.log(`${data.username} joined the call room`);
-    // Request updated user list
-    if (socket) {
-      socket.emit('getUserList');
-    }
-  };
-
-  const handleUserLeft = (data: { username: string }) => {
-    console.log(`${data.username} left the call room`);
-    if (data.username === remoteUser) {
+    socket.on('call-ended', () => {
+      console.log('📞 Call ended by remote user');
       endCall();
-    }
-    // Request updated user list
-    if (socket) {
-      socket.emit('getUserList');
-    }
-  };
+    });
 
-  const handleCallRequest = async (data: { from: string; type: 'audio' | 'video' }) => {
-    console.log('📞 Call request from:', data.from, 'Type:', data.type);
-    const accepted = window.confirm(`${data.from} wants to start a ${data.type} call. Accept?`);
-    if (accepted) {
-      console.log('✅ Call accepted');
-      setRemoteUser(data.from);
-      setCallType(data.type);
-      
-      // Get current socket instance directly
-      const currentSocket = socket;
-      console.log('🔍 Current socket state:', currentSocket ? 'Available' : 'Not available');
-      console.log('🔍 Socket connected:', currentSocket?.connected);
-      
-      // Send acceptance notification immediately if socket is available
-      if (currentSocket && currentSocket.connected) {
-        currentSocket.emit('callAccepted', { to: data.from });
-        console.log('📤 Call accepted notification sent');
-        
-        // Initialize call after sending acceptance
-        console.log('🔧 Starting call initialization...');
-        await initializeCall();
-      } else {
-        console.error('❌ Socket not available or not connected');
-        console.log('🔍 Socket object:', currentSocket);
-        console.log('🔍 Socket connected state:', currentSocket?.connected);
-        
-        // Try to reconnect and retry
-        console.log('🔄 Attempting to reconnect...');
-        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000';
-        const newSocket = io(socketUrl);
-        
-        newSocket.on('connect', async () => {
-          console.log('✅ Reconnected to signaling server');
-          newSocket.emit('callAccepted', { to: data.from });
-          console.log('📤 Call accepted notification sent after reconnect');
-          
-          // Set the new socket and initialize call
-          setSocket(newSocket);
-          await initializeCall();
-        });
-        
-        newSocket.on('connect_error', (error: any) => {
-          console.error('❌ Reconnection failed:', error);
-          alert('Connection lost. Please refresh the page and try again.');
+    socket.on('call-failed', (data: { reason: string; targetUser: string }) => {
+      console.log('❌ Call failed:', data.reason);
+      alert(`Call failed: ${data.reason}`);
+      setCallStatus('idle');
+    });
+
+    return () => {
+      socket.close();
+    };
+  }, [username]);
+
+  const createPeerConnection = () => {
+    const peerConnection = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    });
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate && socketRef.current && targetUser) {
+        console.log('🧊 Sending ICE candidate');
+        socketRef.current.emit('ice-candidate', {
+          to: targetUser,
+          candidate: event.candidate,
         });
       }
-    } else {
-      console.log('❌ Call rejected');
-      
-      // Get current socket instance directly
-      const currentSocket = socket;
-      
-      if (currentSocket && currentSocket.connected) {
-        currentSocket.emit('callRejected', { to: data.from });
-        console.log('📤 Call rejected notification sent');
-      } else {
-        console.log('⚠️ Socket not available for rejection, but call was already rejected by user');
+    };
+
+    peerConnection.ontrack = (event) => {
+      console.log('🎵 Received remote audio stream');
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = event.streams[0];
+        // Auto-play remote audio
+        remoteVideoRef.current.play().catch(e => console.log('Auto-play failed:', e));
       }
-    }
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      console.log('🔗 Connection state:', peerConnection.connectionState);
+      if (peerConnection.connectionState === 'connected') {
+        setCallStatus('connected');
+      } else if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
+        endCall();
+      }
+    };
+
+    return peerConnection;
   };
 
-  const handleCallAccepted = (data: { from: string }) => {
-    console.log('✅ Audio call accepted by:', data.from);
-    setRemoteUser(data.from);
-    setCallState(prev => ({ ...prev, isInCall: true }));
-    setShowSetup(false);
-    console.log('🎵 Waiting for audio offer from:', data.from);
-  };
-
-  const handleCallRejected = (data: { from: string }) => {
-    console.log('❌ Call rejected by:', data.from);
-    alert(`${data.from} rejected your call`);
-    endCall();
-  };
-
-  const handleCallEnded = (data: { from: string }) => {
-    console.log('📞 Call ended by:', data.from);
-    endCall();
-  };
-
-  const initializeCall = async () => {
+  const initializeMedia = async () => {
     try {
-      console.log('🔧 Initializing audio call...');
-      
-      // Get current socket instance directly
-      const currentSocket = socket;
-      console.log('🔍 Current socket state:', currentSocket ? 'Available' : 'Not available');
-      console.log('🔍 Socket connected:', currentSocket?.connected);
-      
-      if (!currentSocket || !currentSocket.connected) {
-        console.error('❌ Socket not available or not connected');
-        console.log('🔍 Socket object:', currentSocket);
-        console.log('🔍 Socket connected state:', currentSocket?.connected);
-        alert('Connection lost. Please refresh the page and try again.');
-        return;
-      }
-
-      console.log('✅ Socket connection confirmed');
-
-      // Get user media - audio only
-      console.log('📱 Getting audio media...');
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: false,
-        audio: true
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: false, 
+        audio: true 
       });
-
-      console.log('✅ Audio stream obtained');
+      
       localStreamRef.current = stream;
       
-      // Create peer connection
-      console.log('🔗 Creating peer connection...');
-      const peerConnection = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      });
+      // Optional: Show local audio indicator
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+        localVideoRef.current.muted = true; // Prevent echo
+      }
+      
+      console.log('🎤 Audio stream initialized');
+      return stream;
+    } catch (error) {
+      console.error('❌ Error accessing microphone:', error);
+      alert('Could not access microphone. Please check permissions.');
+      throw error;
+    }
+  };
 
+  const joinRoom = () => {
+    if (username && socketRef.current) {
+      socketRef.current.emit('joinRoom', { username, room: 'call' });
+    }
+  };
+
+  const callUser = async () => {
+    if (!targetUser || !socketRef.current || callStatus !== 'idle') {
+      console.log('Cannot call: targetUser=', targetUser, 'socketRef.current=', !!socketRef.current, 'callStatus=', callStatus);
+      return;
+    }
+
+    try {
+      setCallStatus('calling');
+      console.log('🚀 Initiating call to:', targetUser);
+
+      // Initialize media and peer connection
+      const stream = await initializeMedia();
+      const peerConnection = createPeerConnection();
       peerConnectionRef.current = peerConnection;
 
-      // Add local audio track only
-      const audioTrack = stream.getAudioTracks()[0];
-      if (audioTrack) {
-        peerConnection.addTrack(audioTrack, stream);
-        console.log('✅ Audio track added to peer connection');
-      }
-
-      // Handle incoming tracks
-      peerConnection.ontrack = (event) => {
-        console.log('🎵 Remote audio stream received during initialization');
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = event.streams[0];
-        }
-      };
-
-      // Handle ICE candidates
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate && currentSocket && currentSocket.connected) {
-          console.log('🧊 Sending ICE candidate during initialization');
-          currentSocket.emit('iceCandidate', {
-            to: remoteUser,
-            candidate: event.candidate
-          });
-        }
-      };
-
-      // Handle connection state changes
-      peerConnection.onconnectionstatechange = () => {
-        console.log('🔗 Connection state during initialization:', peerConnection.connectionState);
-        if (peerConnection.connectionState === 'connected') {
-          console.log('✅ WebRTC audio connection established');
-          setCallState(prev => ({ ...prev, isInCall: true }));
-        } else if (peerConnection.connectionState === 'failed') {
-          console.error('❌ WebRTC connection failed during initialization');
-          endCall();
-        }
-      };
-
-      // Start audio processing for fraud detection
-      startAudioProcessing(stream);
-
-      setShowSetup(false);
-      
-      console.log('✅ Audio call initialization completed');
-
-    } catch (error) {
-      console.error('❌ Error initializing audio call:', error);
-      alert('Failed to access microphone');
-      endCall();
-    }
-  };
-
-  const startAudioProcessing = (stream: MediaStream) => {
-    try {
-      // Check if MediaRecorder is supported
-      if (!window.MediaRecorder) {
-        console.warn('MediaRecorder not supported, skipping audio recording');
-        return;
-      }
-
-      // Create audio context
-      const audioContext = new AudioContext();
-      audioContextRef.current = audioContext;
-
-      // Check supported MIME types
-      const supportedTypes = [
-        'audio/webm;codecs=opus',
-        'audio/webm',
-        'audio/mp4',
-        'audio/ogg;codecs=opus',
-        'audio/wav'
-      ];
-      
-      let selectedType = '';
-      for (const type of supportedTypes) {
-        if (MediaRecorder.isTypeSupported(type)) {
-          selectedType = type;
-          break;
-        }
-      }
-
-      if (!selectedType) {
-        console.warn('No supported audio MIME type found, skipping audio recording');
-        return;
-      }
-
-      // Create media recorder for audio chunks
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: selectedType
-      });
-      mediaRecorderRef.current = mediaRecorder;
-
-      // Process audio chunks every 3 seconds
-      let audioChunks: Blob[] = [];
-      
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunks.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunks, { type: selectedType });
-        sendAudioToServer(audioBlob);
-        audioChunks = [];
-      };
-
-      // Start recording in 3-second intervals
-      const startRecording = () => {
-        try {
-          if (mediaRecorder.state === 'inactive') {
-            mediaRecorder.start();
-            setTimeout(() => {
-              if (mediaRecorder.state === 'recording') {
-                mediaRecorder.stop();
-                startRecording(); // Continue recording
-              }
-            }, 3000);
-          }
-        } catch (error) {
-          console.error('Error starting media recorder:', error);
-        }
-      };
-
-      startRecording();
-
-    } catch (error) {
-      console.error('Error starting audio processing:', error);
-      // Fallback: simulate audio processing for demo
-      console.log('Using fallback audio processing simulation');
-      setInterval(() => {
-        if (callState.isInCall && socket) {
-          // Simulate fraud detection result
-          const mockResult = {
-            classification: Math.random() > 0.7 ? 'Fraud Detected' : 'Safe',
-            confidence: Math.random()
-          };
-          setCallState(prev => ({
-            ...prev,
-            fraudResult: {
-              classification: mockResult.classification as 'Safe' | 'Fraud Detected',
-              confidence: mockResult.confidence,
-              timestamp: new Date(),
-            }
-          }));
-        }
-      }, 5000); // Every 5 seconds
-    }
-  };
-
-  const sendAudioToServer = (audioBlob: Blob) => {
-    if (socket && callState.isInCall) {
-      // Convert blob to base64
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64Audio = reader.result as string;
-        if (socket) {
-          socket.emit('audioChunk', {
-            audio: base64Audio,
-            timestamp: new Date().toISOString()
-          });
-        }
-      };
-      reader.readAsDataURL(audioBlob);
-    }
-  };
-
-  const handleOffer = async (data: { from: string; offer: RTCSessionDescriptionInit }) => {
-    try {
-      console.log('📥 Received audio offer from:', data.from);
-      
-      // Get current socket instance directly
-      const currentSocket = socket;
-      console.log('🔍 Current socket state in handleOffer:', currentSocket ? 'Available' : 'Not available');
-      console.log('🔍 Socket connected in handleOffer:', currentSocket?.connected);
-      
-      if (!currentSocket || !currentSocket.connected) {
-        console.error('❌ Socket not available or not connected when handling offer');
-        return;
-      }
-
-      // Set call state
-      setRemoteUser(data.from);
-      setCallState(prev => ({ ...prev, isInCall: true }));
-      setShowSetup(false);
-
-      const peerConnection = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
+      // Add local stream to peer connection
+      stream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, stream);
       });
 
+      // Create and send offer
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+
+      socketRef.current.emit('call-user', {
+        to: targetUser,
+        offer,
+      });
+
+      console.log('📤 Offer sent to:', targetUser);
+    } catch (error) {
+      console.error('❌ Error initiating call:', error);
+      setCallStatus('idle');
+    }
+  };
+
+  const handleIncomingCall = async (from: string, offer: RTCSessionDescriptionInit) => {
+    try {
+      console.log('📥 Handling incoming call from:', from);
+      setTargetUser(from);
+
+      // Initialize media and peer connection
+      const stream = await initializeMedia();
+      const peerConnection = createPeerConnection();
       peerConnectionRef.current = peerConnection;
 
-      // Add local audio track if available
-      if (localStreamRef.current) {
-        const audioTrack = localStreamRef.current.getAudioTracks()[0];
-        if (audioTrack) {
-          peerConnection.addTrack(audioTrack, localStreamRef.current);
-          console.log('✅ Local audio track added to peer connection');
-        }
-      }
+      // Add local stream to peer connection
+      stream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, stream);
+      });
 
-      // Handle incoming tracks
-      peerConnection.ontrack = (event) => {
-        console.log('🎵 Remote audio stream received from offer');
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = event.streams[0];
-        }
-      };
-
-      // Handle ICE candidates
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate && currentSocket && currentSocket.connected) {
-          console.log('🧊 Sending ICE candidate from offer');
-          currentSocket.emit('iceCandidate', {
-            to: data.from,
-            candidate: event.candidate
-          });
-        }
-      };
-
-      // Handle connection state changes
-      peerConnection.onconnectionstatechange = () => {
-        console.log('🔗 Connection state from offer:', peerConnection.connectionState);
-        if (peerConnection.connectionState === 'connected') {
-          console.log('✅ WebRTC audio connection established from offer');
-        } else if (peerConnection.connectionState === 'failed') {
-          console.error('❌ WebRTC connection failed from offer');
-          endCall();
-        }
-      };
-
-      console.log('📤 Setting remote description and creating answer...');
-      
       // Set remote description and create answer
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
 
-      if (currentSocket && currentSocket.connected) {
-        currentSocket.emit('answer', {
-          to: data.from,
-          answer: answer
-        });
-        console.log('📤 Answer sent to:', data.from);
-      } else {
-        console.error('❌ Socket not available or not connected when sending answer');
-        endCall();
-      }
-
-    } catch (error) {
-      console.error('❌ Error handling audio offer:', error);
-      endCall();
-    }
-  };
-
-  const handleAnswer = async (data: { from: string; answer: RTCSessionDescriptionInit }) => {
-    try {
-      console.log('📥 Received answer from:', data.from);
-      if (peerConnectionRef.current) {
-        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
-        console.log('✅ Remote description set from answer');
-      }
-    } catch (error) {
-      console.error('❌ Error handling answer:', error);
-    }
-  };
-
-  const handleIceCandidate = async (data: { from: string; candidate: RTCIceCandidateInit }) => {
-    try {
-      console.log('🧊 Received ICE candidate from:', data.from);
-      if (peerConnectionRef.current) {
-        await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
-        console.log('✅ ICE candidate added');
-      }
-    } catch (error) {
-      console.error('❌ Error handling ICE candidate:', error);
-    }
-  };
-
-  const initiateCall = async (targetUser: string, type: 'audio' | 'video') => {
-    try {
-      console.log('🚀 Initiating audio call to:', targetUser);
-      
-      // Get current socket instance directly
-      const currentSocket = socket;
-      console.log('🔍 Current socket state:', currentSocket ? 'Available' : 'Not available');
-      console.log('🔍 Socket connected:', currentSocket?.connected);
-      
-      if (!currentSocket || !currentSocket.connected) {
-        console.error('❌ Socket not available or not connected');
-        console.log('🔍 Socket object:', currentSocket);
-        console.log('🔍 Socket connected state:', currentSocket?.connected);
-        alert('Connection lost. Please refresh the page and try again.');
-        return;
-      }
-
-      console.log('✅ Socket connection confirmed');
-
-      // Prevent self-calling
-      if (targetUser === username) {
-        alert('You cannot call yourself');
-        return;
-      }
-
-      // Send call request first
-      console.log('📞 Sending audio call request...');
-      socket.emit('callRequest', {
-        to: targetUser,
-        type: 'audio'
-      });
-      console.log('📤 Audio call request sent to:', targetUser);
-
-      // Set call state
-      setRemoteUser(targetUser);
-      setCallType('audio');
-      
-      console.log('📱 Getting audio media...');
-      
-      // Get user media - audio only
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: false,
-        audio: true
+      // Send answer
+      socketRef.current.emit('answer-call', {
+        to: from,
+        answer,
       });
 
-      console.log('✅ Audio stream obtained');
-      localStreamRef.current = stream;
-
-      console.log('🔗 Creating peer connection...');
-      
-      // Create peer connection
-      const peerConnection = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      });
-
-      peerConnectionRef.current = peerConnection;
-
-      // Add local audio track only
-      const audioTrack = stream.getAudioTracks()[0];
-      if (audioTrack) {
-        peerConnection.addTrack(audioTrack, stream);
-        console.log('✅ Audio track added to peer connection');
-      }
-
-      // Handle incoming tracks
-      peerConnection.ontrack = (event) => {
-        console.log('🎵 Remote audio stream received');
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = event.streams[0];
-        }
-      };
-
-      // Handle ICE candidates
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate && socket) {
-          console.log('🧊 Sending ICE candidate');
-          socket.emit('iceCandidate', {
-            to: targetUser,
-            candidate: event.candidate
-          });
-        }
-      };
-
-      // Handle connection state changes
-      peerConnection.onconnectionstatechange = () => {
-        console.log('🔗 Connection state:', peerConnection.connectionState);
-        if (peerConnection.connectionState === 'connected') {
-          console.log('✅ WebRTC audio connection established');
-        } else if (peerConnection.connectionState === 'failed') {
-          console.error('❌ WebRTC connection failed');
-          endCall();
-        }
-      };
-
-      // Start audio processing
-      startAudioProcessing(stream);
-      
-      console.log('✅ Audio call initiation completed - waiting for acceptance');
-
+      setCallStatus('connected');
+      console.log('📤 Answer sent to:', from);
     } catch (error) {
-      console.error('❌ Error initiating audio call:', error);
-      alert('Failed to access microphone or start call');
-      endCall();
+      console.error('❌ Error handling incoming call:', error);
+      setCallStatus('idle');
     }
   };
 
   const endCall = () => {
-    console.log('📞 Ending call...');
-    
-    // Stop all tracks
+    console.log('📞 Ending call');
+
+    // Stop local stream
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => {
         track.stop();
-        console.log('🛑 Stopped track:', track.kind);
       });
+      localStreamRef.current = null;
     }
 
     // Close peer connection
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
-      console.log('🔗 Peer connection closed');
-    }
-
-    // Stop media recorder
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
-      console.log('🎙️ Media recorder stopped');
-    }
-
-    // Close audio context
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      console.log('🎵 Audio context closed');
-    }
-
-    // Clear timer
-    if (callTimerRef.current) {
-      clearInterval(callTimerRef.current);
-      console.log('⏱️ Call timer cleared');
-    }
-
-    // Reset call state but keep socket connection
-    setCallState(prev => ({
-      ...prev,
-      isInCall: false,
-      isMuted: false,
-      isVideoEnabled: true,
-      callDuration: 0,
-    }));
-    
-    setShowSetup(true);
-    setRemoteUser('');
-
-    // Notify server
-    if (socket && remoteUser) {
-      socket.emit('endCall', { to: remoteUser });
-      console.log('📤 End call notification sent');
+      peerConnectionRef.current = null;
     }
 
     // Clear video elements
@@ -748,60 +267,140 @@ export default function CallPage() {
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
     }
-    
-    console.log('✅ Call ended successfully');
+
+    // Notify remote user
+    if (socketRef.current && targetUser) {
+      socketRef.current.emit('end-call', { to: targetUser });
+    }
+
+    // Reset state
+    setCallStatus('idle');
+    setTargetUser('');
+    setCurrentCaller('');
   };
 
-  const toggleMute = () => {
-    if (localStreamRef.current) {
-      const audioTrack = localStreamRef.current.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setCallState(prev => ({ ...prev, isMuted: !prev.isMuted }));
-      }
+  const getStatusColor = () => {
+    switch (callStatus) {
+      case 'calling': return 'bg-yellow-100 text-yellow-800';
+      case 'receiving': return 'bg-blue-100 text-blue-800';
+      case 'connected': return 'bg-green-100 text-green-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const toggleVideo = () => {
-    if (localStreamRef.current) {
-      const videoTrack = localStreamRef.current.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        setCallState(prev => ({ ...prev, isVideoEnabled: !prev.isVideoEnabled }));
-      }
+  const getStatusText = () => {
+    switch (callStatus) {
+      case 'calling': return `📞 Calling ${targetUser}...`;
+      case 'receiving': return `📞 Incoming call from ${currentCaller}`;
+      case 'connected': return `🎵 Connected with ${targetUser || currentCaller}`;
+      default: return '🔇 No active call';
     }
   };
-
-  const handleJoinCall = (user: string) => {
-    setUsername(user);
-    setShowSetup(false);
-    if (socket) {
-      socket.emit('joinCallRoom', { username: user, room: 'call' });
-      // Request user list after joining
-      setTimeout(() => {
-        socket.emit('getUserList');
-      }, 1000);
-    }
-  };
-
-  if (showSetup) {
-    return <CallSetup onJoin={handleJoinCall} />;
-  }
 
   return (
-    <CallInterface
-      callState={callState}
-      username={username}
-      remoteUser={remoteUser}
-      callType={callType}
-      localVideoRef={localVideoRef}
-      remoteVideoRef={remoteVideoRef}
-      onInitiateCall={initiateCall}
-      onEndCall={endCall}
-      onToggleMute={toggleMute}
-      onToggleVideo={toggleVideo}
-      isConnected={callState.isConnected}
-      availableUsers={availableUsers}
-    />
+    <div className="p-6 max-w-2xl mx-auto">
+      <h1 className="text-3xl font-bold mb-8 text-center">🎵 Voice Call</h1>
+
+      {/* Connection Status */}
+      <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <div className="flex items-center justify-center mb-4">
+          <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+            isConnected 
+              ? 'bg-green-100 text-green-800' 
+              : 'bg-red-100 text-red-800'
+          }`}>
+            {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
+          </span>
+        </div>
+      </div>
+
+      {/* Join Room */}
+      {!isInRoom && (
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+          <h2 className="text-xl font-semibold mb-4">Join Call Room</h2>
+          <div className="flex items-center gap-4">
+            <input
+              type="text"
+              placeholder="Enter your username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              onClick={joinRoom}
+              disabled={!username || !isConnected}
+              className={`px-6 py-3 rounded-lg text-white font-medium transition ${
+                username && isConnected
+                  ? 'bg-blue-600 hover:bg-blue-700'
+                  : 'bg-gray-400 cursor-not-allowed'
+              }`}
+            >
+              Join Room
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Call Interface */}
+      {isInRoom && (
+        <>
+          {/* Available Users */}
+          <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 className="text-xl font-semibold mb-4">Available Users ({availableUsers.length})</h2>
+            {availableUsers.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3">
+                {availableUsers.map((user) => (
+                                     <button
+                     key={user}
+                     onClick={async () => {
+                       setTargetUser(user);
+                       await callUser();
+                     }}
+                     disabled={callStatus !== 'idle'}
+                     className={`p-3 rounded-lg border text-left transition ${
+                       callStatus === 'idle'
+                         ? 'border-gray-300 hover:border-blue-500 hover:bg-blue-50'
+                         : 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50'
+                     }`}
+                   >
+                    <div className="font-medium">👤 {user}</div>
+                    <div className="text-sm text-gray-500">Click to call</div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <p>No other users in the room</p>
+                <p className="text-sm">Open another browser tab to test calling</p>
+              </div>
+            )}
+          </div>
+
+          {/* Call Status */}
+          <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <div className="text-center">
+              <div className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium mb-4 ${getStatusColor()}`}>
+                {getStatusText()}
+              </div>
+              
+              {callStatus === 'connected' && (
+                <button
+                  onClick={endCall}
+                  className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-medium transition"
+                >
+                  📞 End Call
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Audio Elements (hidden) */}
+          <div className="hidden">
+            <video ref={localVideoRef} autoPlay muted />
+            <video ref={remoteVideoRef} autoPlay />
+          </div>
+        </>
+      )}
+    </div>
   );
 }
