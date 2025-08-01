@@ -109,6 +109,18 @@ export default function CallPage() {
       newSocket.emit('getUserList');
     });
 
+    // Handle disconnection
+    newSocket.on('disconnect', () => {
+      setCallState(prev => ({ ...prev, isConnected: false }));
+      console.log('❌ Disconnected from signaling server');
+    });
+
+    // Handle connection errors
+    newSocket.on('connect_error', (error: any) => {
+      console.error('❌ Connection error:', error);
+      setCallState(prev => ({ ...prev, isConnected: false }));
+    });
+
     setSocket(newSocket);
 
     return () => {
@@ -165,17 +177,42 @@ export default function CallPage() {
       setRemoteUser(data.from);
       setCallType(data.type);
       
-      // Send acceptance notification first
+      // Wait for socket connection before sending acceptance
+      let retries = 0;
+      const maxRetries = 5;
+      
+      while (!socket && retries < maxRetries) {
+        console.log(`⏳ Waiting for socket before sending acceptance... (${retries + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        retries++;
+      }
+      
+      // Send acceptance notification
       if (socket) {
         socket.emit('callAccepted', { to: data.from });
         console.log('📤 Call accepted notification sent');
+      } else {
+        console.error('❌ Socket not available for sending acceptance');
+        alert('Connection lost. Please refresh the page and try again.');
+        return;
       }
       
-      // Initialize call immediately
+      // Initialize call after sending acceptance
       console.log('🔧 Starting call initialization...');
       await initializeCall();
     } else {
       console.log('❌ Call rejected');
+      
+      // Wait for socket connection before sending rejection
+      let retries = 0;
+      const maxRetries = 5;
+      
+      while (!socket && retries < maxRetries) {
+        console.log(`⏳ Waiting for socket before sending rejection... (${retries + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        retries++;
+      }
+      
       if (socket) {
         socket.emit('callRejected', { to: data.from });
         console.log('📤 Call rejected notification sent');
@@ -206,12 +243,23 @@ export default function CallPage() {
     try {
       console.log('🔧 Initializing audio call...');
       
-      // Check socket connection
+      // Wait for socket connection with retry
+      let retries = 0;
+      const maxRetries = 5;
+      
+      while (!socket && retries < maxRetries) {
+        console.log(`⏳ Waiting for socket connection... (${retries + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        retries++;
+      }
+      
       if (!socket) {
-        console.error('❌ Socket not available during initialization');
-        alert('Connection lost. Please refresh the page.');
+        console.error('❌ Socket not available after retries');
+        alert('Connection lost. Please refresh the page and try again.');
         return;
       }
+
+      console.log('✅ Socket connection confirmed');
 
       // Get user media - audio only
       console.log('📱 Getting audio media...');
@@ -516,12 +564,23 @@ export default function CallPage() {
     try {
       console.log('🚀 Initiating audio call to:', targetUser);
       
-      // Check socket connection
+      // Wait for socket connection with retry
+      let retries = 0;
+      const maxRetries = 5;
+      
+      while (!socket && retries < maxRetries) {
+        console.log(`⏳ Waiting for socket connection... (${retries + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        retries++;
+      }
+      
       if (!socket) {
-        console.error('❌ Socket not available');
-        alert('Connection lost. Please refresh the page.');
+        console.error('❌ Socket not available after retries');
+        alert('Connection lost. Please refresh the page and try again.');
         return;
       }
+
+      console.log('✅ Socket connection confirmed');
 
       // Prevent self-calling
       if (targetUser === username) {
