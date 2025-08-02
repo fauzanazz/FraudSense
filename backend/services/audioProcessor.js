@@ -2,11 +2,12 @@ const ffmpeg = require('fluent-ffmpeg');
 const wav = require('node-wav');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { promisify } = require('util');
 
 class AudioProcessor {
   constructor() {
-    this.tempDir = path.join(__dirname, '../temp');
+    this.tempDir = path.join(os.tmpdir(), 'fraudsense-audio');
     this.sampleRate = parseInt(process.env.AUDIO_SAMPLE_RATE) || 16000;
     this.chunkDuration = parseInt(process.env.AUDIO_CHUNK_DURATION) || 3000; // 3 seconds
     
