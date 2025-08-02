@@ -1,186 +1,274 @@
-# Fraud Detection Chat & Call Application
+# Chat & Call Application
 
-A real-time chat and video call application with AI-powered fraud detection capabilities.
+A real-time chat and video calling application built with React, Node.js, Socket.IO, and WebRTC.
 
 ## Features
 
-- **Real-time Chat**: Instant messaging with fraud detection
-- **Video/Audio Calls**: WebRTC-based calling with fraud analysis
-- **AI Fraud Detection**: 
-  - Text-based fraud detection using keyword analysis and pattern matching
-  - Audio-based fraud detection for voice calls
-  - Real-time alerts and confidence scoring
-- **User Management**: Join rooms and manage connections
-- **Responsive UI**: Modern, mobile-friendly interface
+- **Real-time Chat**: Instant messaging between users using Socket.IO
+- **Video Calls**: Peer-to-peer video calling using WebRTC
+- **User Management**: Simple user creation and selection
+- **Conversation History**: Persistent chat history stored in MongoDB
+- **Responsive Design**: Works on desktop and mobile devices
 
-## Project Structure
+## Tech Stack
 
-```
-datathon-final/
-├── backend/           # Express.js + Socket.IO server
-│   ├── server.js      # Main server file
-│   └── package.json   # Backend dependencies
-└── front-end-new/     # Next.js frontend application
-    ├── app/           # Next.js app directory
-    ├── components/    # React components
-    └── package.json   # Frontend dependencies
-```
+### Backend
+- **Node.js** with Express.js
+- **Socket.IO** for real-time communication
+- **MongoDB** with Mongoose for data storage
+- **WebRTC** signaling server
+
+### Frontend
+- **React** with Vite
+- **Socket.IO Client** for real-time features
+- **Axios** for HTTP requests
+- **WebRTC** for video calling
 
 ## Prerequisites
 
 - Node.js (v16 or higher)
-- npm or yarn
+- Docker and Docker Compose
+- Modern web browser with WebRTC support
 
 ## Installation & Setup
 
-### 1. Install Backend Dependencies
+### 1. Clone the repository
+```bash
+git clone <repository-url>
+cd FraudSense
+```
 
+### 2. Setup Backend
 ```bash
 cd backend
 npm install
 ```
 
-### 2. Install Frontend Dependencies
+Create a `.env` file in the backend directory:
+```env
+PORT=3001
+MONGODB_URI=mongodb://localhost:27017/chatapp
+```
 
+### 3. Setup Frontend
 ```bash
-cd front-end-new
+cd ../
 npm install
 ```
 
-## Running the Application
+### 4. Start MongoDB with Docker
+Start MongoDB using Docker Compose:
+```bash
+docker-compose up -d mongodb
+```
 
-### Option 1: Run Backend and Frontend Separately
+This will:
+- Start MongoDB on port 27017
+- Create a database user `chatapp_user` with password `chatapp_password`
+- Initialize the `chatapp` database with required collections
+- Optionally start Mongo Express (web UI) on port 8081
 
-**Terminal 1 - Start Backend:**
+To view the database in your browser, visit: http://localhost:8081
+
+### 5. Run the Application
+
+Start the backend server:
 ```bash
 cd backend
-npm start
-# or for development with auto-restart:
 npm run dev
 ```
 
-**Terminal 2 - Start Frontend:**
+In a new terminal, start the frontend:
 ```bash
-cd front-end-new
 npm run dev
 ```
 
-### Option 2: Run Both with Concurrently (if installed globally)
-
-```bash
-# From project root
-concurrently "cd backend && npm start" "cd front-end-new && npm run dev"
-```
-
-## Access the Application
-
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:3001
-- **Health Check**: http://localhost:3001/health
-- **Connected Users**: http://localhost:3001/users
+The application will be available at:
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:3001
 
 ## Usage
 
-### Chat Feature
-1. Open http://localhost:3000/chat
-2. Enter your username and join the chat room
-3. Start sending messages
-4. Fraud detection will analyze messages in real-time
-5. Alerts will appear for suspicious content
+### Getting Started
+1. Open the application in your browser
+2. Either select an existing user or create a new one
+3. Click "Login" to enter the chat interface
 
-### Call Feature
-1. Open http://localhost:3000/call
-2. Enter your username to join the call room
-3. Select a user to call (audio or video)
-4. Accept incoming calls
-5. Audio fraud detection runs during calls
+### Chatting
+1. Select a user from the "Start New Chat" section to create a conversation
+2. Type your message in the input field and press Enter or click Send
+3. Messages will appear in real-time for both users
 
-## Fraud Detection Features
+### Video Calling
+1. In an active conversation, click the "📞 Call" button
+2. The other user will receive a call notification
+3. Both users' video feeds will appear in the call interface
+4. Click "End Call" to terminate the call
 
-### Text Analysis
-- Keyword-based detection (passwords, credit cards, etc.)
-- Pattern matching (SSN, credit card numbers, phone numbers)
-- Urgency indicators analysis
-- Confidence scoring (0-100%)
+## Project Structure
 
-### Audio Analysis
-- Volume and pitch analysis
-- Speech speed detection
-- Audio quality assessment
-- Real-time processing during calls
+```
+FraudSense/
+├── backend/
+│   ├── models/
+│   │   ├── User.js
+│   │   ├── Conversation.js
+│   │   └── Message.js
+│   ├── routes/
+│   │   ├── users.js
+│   │   ├── conversations.js
+│   │   └── messages.js
+│   ├── server.js
+│   ├── package.json
+│   └── .env
+├── src/
+│   ├── components/
+│   │   ├── Login.jsx
+│   │   ├── ChatLayout.jsx
+│   │   ├── ConversationList.jsx
+│   │   ├── ChatWindow.jsx
+│   │   ├── MessageList.jsx
+│   │   ├── MessageInput.jsx
+│   │   └── VideoCall.jsx
+│   ├── App.jsx
+│   ├── App.css
+│   ├── index.css
+│   └── main.jsx
+├── package.json
+└── README.md
+```
 
 ## API Endpoints
 
-### Backend API Routes
-- `GET /health` - Server health check
-- `GET /users` - Get connected users
-- `GET /call-users` - Get users available for calls
+### Users
+- `GET /api/users` - Get all users
+- `POST /api/users` - Create or get user
+- `GET /api/users/:id` - Get user by ID
 
-### WebSocket Events
-- `joinRoom` - Join chat room
-- `joinCallRoom` - Join call room
-- `sendMessage` - Send chat message
-- `sendFeedback` - Send fraud detection feedback
-- `offer/answer/iceCandidate` - WebRTC signaling
-- `callRequest/callAccepted/callRejected` - Call management
-- `audioChunk` - Audio data for fraud analysis
+### Conversations
+- `GET /api/conversations/:userId` - Get user's conversations
+- `POST /api/conversations` - Create new conversation
 
-## Environment Variables
+### Messages
+- `GET /api/messages/:conversationId` - Get conversation messages
+- `POST /api/messages` - Send new message
 
-### Backend (.env)
-```env
-PORT=3001
-NODE_ENV=development
-```
+## Socket.IO Events
 
-### Frontend (.env.local)
-```env
-NEXT_PUBLIC_SOCKET_URL=http://localhost:3001
-```
+### Chat Events
+- `joinRoom` - Join a conversation room
+- `sendMessage` - Send a message
+- `receiveMessage` - Receive a message
+
+### WebRTC Signaling Events
+- `call-offer` - Initiate a call
+- `call-answer` - Answer a call
+- `ice-candidate` - Exchange ICE candidates
+- `hang-up` - End a call
 
 ## Development
 
 ### Backend Development
-- Uses Express.js for HTTP server
-- Socket.IO for real-time communication
-- CORS enabled for frontend communication
-- Modular fraud detection functions
+```bash
+cd backend
+npm run dev  # Uses nodemon for auto-reload
+```
 
 ### Frontend Development
-- Next.js 15 with App Router
-- TypeScript for type safety
-- Tailwind CSS for styling
-- Socket.IO client for real-time features
-- WebRTC for peer-to-peer calls
+```bash
+npm run dev  # Vite dev server with hot reload
+```
 
-## Deployment
+## Docker Commands
 
-### Backend Deployment
-- Can be deployed to any Node.js hosting service
-- Ensure WebSocket support
-- Set appropriate CORS origins
+### MongoDB Management
+```bash
+# Start MongoDB only
+docker-compose up -d mongodb
 
-### Frontend Deployment
-- Optimized for Vercel deployment
-- Static export available
-- Environment variables for production
+# Start MongoDB + Mongo Express (web UI)
+docker-compose up -d
 
-## Security Considerations
+# Stop services
+docker-compose down
 
-- Fraud detection is for demonstration purposes
-- In production, implement proper authentication
-- Add rate limiting and input validation
-- Use HTTPS in production
-- Implement proper error handling
+# View logs
+docker-compose logs mongodb
 
-## Contributing
+# Access MongoDB shell
+docker exec -it chatapp-mongodb mongosh -u admin -p password123
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+# Remove all data (reset database)
+docker-compose down -v
+```
 
-## License
+## Troubleshooting
 
-This project is for educational and demonstration purposes. 
+### Common Issues
+
+1. **MongoDB Connection Error**
+   - Ensure Docker is running: `docker --version`
+   - Start MongoDB: `docker-compose up -d mongodb`
+   - Check container status: `docker-compose ps`
+   - View logs: `docker-compose logs mongodb`
+
+2. **CORS Issues**
+   - The backend is configured to allow requests from `http://localhost:5173`
+   - If using a different port, update the CORS configuration in `server.js`
+
+3. **Video Call Not Working**
+   - Ensure your browser supports WebRTC
+   - Allow camera and microphone permissions
+   - Check that both users are connected to the Socket.IO server
+
+4. **Socket.IO Connection Issues**
+   - Check that the backend server is running on port 3001
+   - Verify the Socket.IO client is connecting to the correct URL
+
+## Browser Compatibility
+
+- Chrome 60+
+- Firefox 55+
+- Safari 11+
+- Edge 79+
+
+Note: WebRTC features require HTTPS in production environments.
+
+## Future Enhancements
+
+- Authentication and authorization
+- File sharing
+- Group chats
+- Screen sharing
+- Mobile app using React Native
+- Push notifications
+- Message encryption
+
+
+
+# Find Suitable Instances
+```bash
+vastai search offers 'compute_cap >= 800 gpu_name=L40S num_gpus=1 static_ip=true direct_port_count > 1 cuda_vers >= 12.4 inet_up>=800 inet_down>=800' -o 'dph+'
+```
+
+# Create Model Instances
+```bash
+# Sailor2 model for text analysis (port 8000)
+vastai create instance <instance-id> --image vllm/vllm-openai:latest --env '-p 8000:8000' --disk 64 --args --model fauzanazz/sailor2-fraud-indo-8b-merged
+
+# Qwen2 model for audio analysis (port 8001) 
+vastai create instance <instance-id> --image vllm/vllm-openai:latest --env '-p 8001:8000' --disk 64 --args --model fauzanazz/qwen2-audio-indo-fraud-7b-merged
+```
+
+# Test Model Endpoints
+```bash
+# Test Sailor2 text model
+curl -X POST http://<Instance-IP-Address>:8000/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "fauzanazz/sailor2-fraud-indo-8b-merged", "prompt": "Hello, how are you?", "max_tokens": 50}'
+
+# Test Qwen2 audio model  
+curl -X POST http://<Instance-IP-Address>:8001/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "fauzanazz/qwen2-audio-indo-fraud-7b-merged", "prompt": "Hello, how are you?", "max_tokens": 50}'
+```
