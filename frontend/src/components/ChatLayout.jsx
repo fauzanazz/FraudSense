@@ -36,7 +36,7 @@ function ChatLayout({ user, socket, users }) {
 
   const fetchConversations = async () => {
     try {
-      const response = await axios.get(`http://localhost:3001/api/conversations/${user._id}`);
+      const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/conversations/${user._id}`);
       setConversations(response.data);
     } catch (error) {
       console.error('Error fetching conversations:', error);
@@ -45,7 +45,7 @@ function ChatLayout({ user, socket, users }) {
 
   const createOrSelectConversation = async (otherUserId) => {
     try {
-      const response = await axios.post('http://localhost:3001/api/conversations', {
+      const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/conversations`, {
         participants: [user._id, otherUserId]
       });
       

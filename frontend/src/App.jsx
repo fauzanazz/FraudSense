@@ -5,7 +5,7 @@ import ChatLayout from './components/ChatLayout';
 import Login from './components/Login';
 import './App.css';
 
-const socket = io('http://localhost:3001');
+const socket = io(import.meta.env.VITE_API_BASE_URL);
 
 function App() {
   const [user, setUser] = useState(null);
@@ -17,7 +17,7 @@ function App() {
 
   const fetchUsers = async () => {
     try {
-      const response = await axios.get('http://localhost:3001/api/users');
+      const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/users`);
       setUsers(response.data);
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -26,7 +26,7 @@ function App() {
 
   const handleLogin = async (username) => {
     try {
-      const response = await axios.post('http://localhost:3001/api/users', { username });
+      const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/users`, { username });
       setUser(response.data);
       socket.emit('user-login', response.data._id);
     } catch (error) {

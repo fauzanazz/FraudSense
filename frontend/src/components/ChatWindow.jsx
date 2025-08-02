@@ -34,7 +34,7 @@ function ChatWindow({ conversation, user, socket, onStartCall }) {
 
   const fetchMessages = async () => {
     try {
-      const response = await axios.get(`http://localhost:3001/api/messages/${conversation._id}`);
+      const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/messages/${conversation._id}`);
       setMessages(response.data);
     } catch (error) {
       console.error('Error fetching messages:', error);
