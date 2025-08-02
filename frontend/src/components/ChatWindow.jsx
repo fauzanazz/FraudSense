@@ -5,6 +5,8 @@ import MessageInput from './MessageInput';
 
 function ChatWindow({ conversation, user, socket, onStartCall }) {
   const [messages, setMessages] = useState([]);
+  const [fraudAlerts, setFraudAlerts] = useState([]);
+  const [fraudAnalysisResults, setFraudAnalysisResults] = useState([]);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -16,7 +18,14 @@ function ChatWindow({ conversation, user, socket, onStartCall }) {
 
   useEffect(() => {
     socket.on('receiveMessage', handleReceiveMessage);
-    return () => socket.off('receiveMessage');
+    socket.on('fraud-alert', handleFraudAlert);
+    socket.on('fraud-analysis-result', handleFraudAnalysisResult);
+    
+    return () => {
+      socket.off('receiveMessage');
+      socket.off('fraud-alert');
+      socket.off('fraud-analysis-result');
+    };
   }, []);
 
   useEffect(() => {
@@ -34,6 +43,25 @@ function ChatWindow({ conversation, user, socket, onStartCall }) {
 
   const handleReceiveMessage = (message) => {
     setMessages(prev => [...prev, message]);
+  };
+
+  const handleFraudAlert = (alertData) => {
+    console.log('🚨 Fraud alert received:', alertData);
+    setFraudAlerts(prev => [...prev, alertData]);
+    
+    // Auto-dismiss alert after 10 seconds
+    setTimeout(() => {
+      setFraudAlerts(prev => prev.filter(alert => alert.timestamp !== alertData.timestamp));
+    }, 10000);
+  };
+
+  const handleFraudAnalysisResult = (result) => {
+    console.log('📊 Fraud analysis result:', result);
+    setFraudAnalysisResults(prev => [...prev.slice(-9), result]); // Keep last 10 results
+  };
+
+  const dismissAlert = (alertTimestamp) => {
+    setFraudAlerts(prev => prev.filter(alert => alert.timestamp !== alertTimestamp));
   };
 
   const handleSendMessage = (content) => {
@@ -74,6 +102,30 @@ function ChatWindow({ conversation, user, socket, onStartCall }) {
           </button>
         </div>
       </div>
+
+      {/* Fraud Alerts */}
+      {fraudAlerts.length > 0 && (
+        <div className="fraud-alerts">
+          {fraudAlerts.map((alert, index) => (
+            <div key={index} className={`fraud-alert ${alert.severity}`}>
+              <div className="alert-content">
+                <span className="alert-icon">🚨</span>
+                <div className="alert-text">
+                  <strong>Fraud Alert ({alert.type})</strong>
+                  <p>{alert.message}</p>
+                  <small>Score: {alert.fraudScore}, Confidence: {(alert.confidence * 100).toFixed(1)}%</small>
+                </div>
+                <button 
+                  className="alert-dismiss" 
+                  onClick={() => dismissAlert(alert.timestamp)}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       
       <div className="messages-container">
         <MessageList messages={messages} currentUserId={user._id} />

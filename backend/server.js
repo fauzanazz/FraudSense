@@ -29,10 +29,16 @@ const userSockets = new Map();
 const conversationRoutes = require('./routes/conversations');
 const messageRoutes = require('./routes/messages');
 const userRoutes = require('./routes/users');
+const aiAnalysisRoutes = require('./routes/ai-analysis');
+
+// Import fraud detection services
+const fraudDetection = require('./services/fraudDetection');
+const audioProcessor = require('./services/audioProcessor');
 
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/ai-analysis', aiAnalysisRoutes);
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -63,6 +69,49 @@ io.on('connection', (socket) => {
         ...newMessage.toObject(),
         senderName: messageData.senderName
       });
+
+      // Trigger debounced fraud analysis for text
+      const messages = await Message.find({ conversationId: messageData.conversationId })
+        .sort({ timestamp: 1 })
+        .populate('senderId', 'username');
+
+      const formattedMessages = messages.map(msg => ({
+        senderName: msg.senderId?.username || 'Unknown',
+        content: msg.content,
+        timestamp: msg.timestamp
+      }));
+
+      const context = {
+        userId: messageData.senderId,
+        conversationId: messageData.conversationId,
+        messageCount: messages.length
+      };
+
+      // Debounced text analysis with real-time callback
+      fraudDetection.analyzeTextWithDebounce(
+        messageData.conversationId,
+        formattedMessages,
+        context,
+        (analysisResult) => {
+          if (analysisResult.success && analysisResult.alertTriggered) {
+            // Send fraud alert to all participants in the conversation
+            io.to(messageData.conversationId).emit('fraud-alert', {
+              type: 'text',
+              ...analysisResult.alertData,
+              timestamp: new Date()
+            });
+            console.log(`🚨 Text fraud alert sent to conversation ${messageData.conversationId}`);
+          }
+          
+          // Send analysis result to conversation participants
+          io.to(messageData.conversationId).emit('fraud-analysis-result', {
+            type: 'text',
+            conversationId: messageData.conversationId,
+            ...analysisResult
+          });
+        }
+      );
+      
     } catch (error) {
       console.error('Error saving message:', error);
     }
@@ -145,6 +194,46 @@ io.on('connection', (socket) => {
       socket.to(targetSocketId).emit('call-ended', {
         from: socket.id
       });
+    }
+  });
+
+  socket.on('audio-chunk', async (data) => {
+    try {
+      const { conversationId, audioData, userId, format = 'webm' } = data;
+      
+      // Process audio chunk for fraud detection
+      const metadata = {
+        userId,
+        conversationId,
+        socketId: socket.id
+      };
+
+      // Convert base64 audio data to buffer if needed
+      const audioBuffer = Buffer.isBuffer(audioData) ? audioData : Buffer.from(audioData, 'base64');
+
+      // Trigger audio fraud analysis
+      const analysisResult = await fraudDetection.analyzeAudioChunk(audioBuffer, format, metadata);
+      
+      if (analysisResult.success && analysisResult.alertTriggered) {
+        // Send fraud alert to all participants in the conversation
+        io.to(conversationId).emit('fraud-alert', {
+          type: 'audio',
+          ...analysisResult.alertData,
+          timestamp: new Date()
+        });
+        console.log(`🚨 Audio fraud alert sent to conversation ${conversationId}`);
+      }
+      
+      // Send analysis result to conversation participants
+      io.to(conversationId).emit('fraud-analysis-result', {
+        type: 'audio',
+        conversationId,
+        ...analysisResult
+      });
+      
+    } catch (error) {
+      console.error('Error processing audio chunk:', error);
+      socket.emit('audio-analysis-error', { error: error.message });
     }
   });
 

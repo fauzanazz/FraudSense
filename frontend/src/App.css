@@ -649,6 +649,130 @@
   align-items: center;
 }
 
+/* Fraud Alert Styles */
+.fraud-alerts {
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  margin: 0;
+  padding: 0;
+}
+
+.fraud-alert {
+  border-left: 4px solid #f39c12;
+  margin: 0;
+  padding: 0;
+  animation: slideIn 0.3s ease-out;
+}
+
+.fraud-alert.high {
+  border-left-color: #e74c3c;
+  background: #fdf2f2;
+}
+
+.fraud-alert.low {
+  border-left-color: #f39c12;
+  background: #fff8f0;
+}
+
+.alert-content {
+  display: flex;
+  align-items: flex-start;
+  padding: 0.75rem;
+  gap: 0.5rem;
+}
+
+.alert-icon {
+  font-size: 1.2rem;
+  color: #e74c3c;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.alert-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.alert-text strong {
+  color: #2c3e50;
+  font-size: 0.9rem;
+  margin-bottom: 0.25rem;
+  display: block;
+}
+
+.alert-text p {
+  margin: 0.25rem 0;
+  color: #34495e;
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+
+.alert-text small {
+  color: #7f8c8d;
+  font-size: 0.75rem;
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.alert-dismiss {
+  background: none;
+  border: none;
+  color: #95a5a6;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.alert-dismiss:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: #e74c3c;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Audio format selection styles */
+.audio-format-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  background: #f8f9fa;
+  border-radius: 5px;
+  border: 1px solid #e9ecef;
+}
+
+.audio-format-selector label {
+  font-size: 0.85rem;
+  color: #6c757d;
+  margin: 0;
+}
+
+.audio-format-selector select {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #ced4da;
+  border-radius: 3px;
+  font-size: 0.85rem;
+  background: white;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
   .chat-layout {
@@ -667,5 +791,22 @@
   .video-call-container {
     width: 95%;
     height: 90%;
+  }
+
+  .fraud-alert {
+    margin: 0;
+  }
+
+  .alert-content {
+    padding: 0.5rem;
+    gap: 0.4rem;
+  }
+
+  .alert-text strong {
+    font-size: 0.85rem;
+  }
+
+  .alert-text p {
+    font-size: 0.8rem;
   }
 }

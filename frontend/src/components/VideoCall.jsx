@@ -8,6 +8,8 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [localAudioLevel, setLocalAudioLevel] = useState(0);
   const [remoteAudioLevel, setRemoteAudioLevel] = useState(0);
+  const [audioFormat, setAudioFormat] = useState('webm');
+  const [isRecording, setIsRecording] = useState(false);
 
   const localVideoRef = useRef();
   const remoteVideoRef = useRef();
@@ -16,6 +18,8 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
   const remoteAudioContextRef = useRef(null);
   const localAnalyserRef = useRef(null);
   const remoteAnalyserRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   useEffect(() => {
     initializeCall();
@@ -112,6 +116,9 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
       
       // Set up audio level monitoring for local stream
       setupAudioLevelMonitoring(stream, 'local');
+      
+      // Set up audio recording for fraud detection
+      setupAudioRecording(stream);
 
       // Create RTCPeerConnection
       const pc = new RTCPeerConnection({
@@ -322,8 +329,77 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
     }
   };
 
+  const setupAudioRecording = (stream) => {
+    try {
+      // Create audio-only stream for recording
+      const audioOnlyStream = new MediaStream(stream.getAudioTracks());
+      
+      // Check if MediaRecorder supports the selected format
+      const mimeType = `audio/${audioFormat}`;
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        console.warn(`❌ ${mimeType} not supported, falling back to webm`);
+        setAudioFormat('webm');
+      }
+
+      const mediaRecorder = new MediaRecorder(audioOnlyStream, {
+        mimeType: MediaRecorder.isTypeSupported(`audio/${audioFormat}`) ? `audio/${audioFormat}` : 'audio/webm'
+      });
+
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+          
+          // Convert chunk to base64 and send for fraud analysis
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64Data = reader.result.split(',')[1]; // Remove data:audio/... prefix
+            
+            socket.emit('audio-chunk', {
+              conversationId: callData.conversationId || `call_${user._id}_${Date.now()}`,
+              audioData: base64Data,
+              userId: user._id,
+              format: audioFormat
+            });
+          };
+          reader.readAsDataURL(event.data);
+        }
+      };
+
+      mediaRecorder.onerror = (event) => {
+        console.error('❌ MediaRecorder error:', event.error);
+      };
+
+      console.log('🎙️ Audio recording setup complete');
+    } catch (error) {
+      console.error('❌ Error setting up audio recording:', error);
+    }
+  };
+
+  const startAudioRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'inactive') {
+      mediaRecorderRef.current.start(2000); // Record in 2-second chunks
+      setIsRecording(true);
+      console.log('🔴 Started audio recording for fraud detection');
+    }
+  };
+
+  const stopAudioRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      console.log('⏹️ Stopped audio recording');
+    }
+  };
+
   const cleanup = () => {
     console.log('🧹 Cleaning up call resources');
+    
+    // Stop audio recording
+    stopAudioRecording();
+    
     if (localStream) {
       localStream.getTracks().forEach(track => track.stop());
     }
@@ -346,9 +422,12 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
     remoteAudioContextRef.current = null;
     localAnalyserRef.current = null;
     remoteAnalyserRef.current = null;
+    mediaRecorderRef.current = null;
+    audioChunksRef.current = [];
     setCallAccepted(false);
     setLocalAudioLevel(0);
     setRemoteAudioLevel(0);
+    setIsRecording(false);
   };
 
   return (
@@ -425,6 +504,27 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
         </div>
 
         <div className="call-controls">
+          {/* Audio Format Selection */}
+          <div className="audio-format-selector">
+            <label>Audio Format:</label>
+            <select 
+              value={audioFormat} 
+              onChange={(e) => setAudioFormat(e.target.value)}
+              disabled={isRecording}
+            >
+              <option value="webm">WebM</option>
+              <option value="wav">WAV</option>
+              <option value="ogg">OGG</option>
+            </select>
+            <button 
+              onClick={isRecording ? stopAudioRecording : startAudioRecording}
+              className={`control-btn ${isRecording ? 'disabled' : ''}`}
+              title="Toggle fraud detection recording"
+            >
+              {isRecording ? '🔴 Recording' : '⭕ Record'}
+            </button>
+          </div>
+
           {!callAccepted && callData.type === 'outgoing' && (
             <div className="connecting">
               <p>Connecting...</p>

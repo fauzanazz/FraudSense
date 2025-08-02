@@ -243,3 +243,32 @@ Note: WebRTC features require HTTPS in production environments.
 - Mobile app using React Native
 - Push notifications
 - Message encryption
+
+
+
+# Find Suitable Instances
+```bash
+vastai search offers 'compute_cap >= 800 gpu_name=L40S num_gpus=1 static_ip=true direct_port_count > 1 cuda_vers >= 12.4 inet_up>=800 inet_down>=800' -o 'dph+'
+```
+
+# Create Model Instances
+```bash
+# Sailor2 model for text analysis (port 8000)
+vastai create instance <instance-id> --image vllm/vllm-openai:latest --env '-p 8000:8000' --disk 64 --args --model fauzanazz/sailor2-fraud-indo-8b-merged
+
+# Qwen2 model for audio analysis (port 8001) 
+vastai create instance <instance-id> --image vllm/vllm-openai:latest --env '-p 8001:8000' --disk 64 --args --model fauzanazz/qwen2-audio-indo-fraud-7b-merged
+```
+
+# Test Model Endpoints
+```bash
+# Test Sailor2 text model
+curl -X POST http://<Instance-IP-Address>:8000/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "fauzanazz/sailor2-fraud-indo-8b-merged", "prompt": "Hello, how are you?", "max_tokens": 50}'
+
+# Test Qwen2 audio model  
+curl -X POST http://<Instance-IP-Address>:8001/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "fauzanazz/qwen2-audio-indo-fraud-7b-merged", "prompt": "Hello, how are you?", "max_tokens": 50}'
+```
