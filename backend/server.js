@@ -7,7 +7,7 @@ require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
-const socketCorsOrigins = (process.env.SOCKETIO_CORS_ORIGINS || "http://localhost:3000,http://localhost:5173")
+const socketCorsOrigins = (process.env.SOCKETIO_CORS_ORIGINS || "http://localhost:3000,http://localhost:5173,https://fraudsense-frontend.fauzanazz.com")
   .split(',')
   .map((o) => o.trim())
   .filter(Boolean);
@@ -15,11 +15,18 @@ const socketCorsOrigins = (process.env.SOCKETIO_CORS_ORIGINS || "http://localhos
 const io = socketIo(server, {
   cors: {
     origin: socketCorsOrigins,
-    methods: ["GET", "POST"]
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true
   }
 });
 
-app.use(cors());
+app.use(cors({
+  origin: socketCorsOrigins,
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
+}));
 app.use(express.json());
 
 const PORT = process.env.PORT || 3001;

@@ -10,6 +10,8 @@ services:
       - NODE_ENV=production
       # Replace with your MongoDB Atlas URI
       - MONGODB_URI=${MONGODB_URI}
+      # Allow Socket.IO and REST CORS from these origins (comma-separated)
+      - SOCKETIO_CORS_ORIGINS=${SOCKETIO_CORS_ORIGINS:-https://fraudsense-frontend.fauzanazz.com}
       # Optional: configure model endpoints if used
       - SAILOR2_ENDPOINT=${SAILOR2_ENDPOINT}
       - QWEN2_AUDIO_ENDPOINT=${QWEN2_AUDIO_ENDPOINT}
