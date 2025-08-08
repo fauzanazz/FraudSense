@@ -7,9 +7,14 @@ require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
+const socketCorsOrigins = (process.env.SOCKETIO_CORS_ORIGINS || "http://localhost:3000,http://localhost:5173")
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 const io = socketIo(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:5173"],
+    origin: socketCorsOrigins,
     methods: ["GET", "POST"]
   }
 });
@@ -249,12 +254,13 @@ io.on('connection', (socket) => {
   });
 });
 
-// For Vercel serverless deployment
-if (process.env.NODE_ENV !== 'production') {
+// Start HTTP server unless running on Vercel serverless
+const isVercel = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
+if (!isVercel) {
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
 }
 
-// Export the app for Vercel
+// Export the app (required for Vercel compatibility)
 module.exports = app;

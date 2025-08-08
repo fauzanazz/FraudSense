@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      # Replace with your MongoDB Atlas URI
+      - MONGODB_URI=${MONGODB_URI}
+      # Optional: configure model endpoints if used
+      - SAILOR2_ENDPOINT=${SAILOR2_ENDPOINT}
+      - QWEN2_AUDIO_ENDPOINT=${QWEN2_AUDIO_ENDPOINT}
+      # Fraud analysis knobs
+      - FRAUD_ANALYSIS_DEBOUNCE=${FRAUD_ANALYSIS_DEBOUNCE:-3000}
+      - ENABLE_REAL_TIME_ALERTS=${ENABLE_REAL_TIME_ALERTS:-true}
+      - STORE_FRAUD_RESULTS=${STORE_FRAUD_RESULTS:-true}
+      # Server port
+      - PORT=3001
+    expose:
+      - "3001"
+    labels:
+      - "traefik.enable=true"
+      # Set your domain if exposing via Traefik; otherwise remove labels
+      - "traefik.http.routers.fraudsense-backend.rule=Host(`${BACKEND_DOMAIN}`)"
+      - "traefik.http.routers.fraudsense-backend.entrypoints=websecure"
+      - "traefik.http.routers.fraudsense-backend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.fraudsense-backend.loadbalancer.server.port=3001"
+    networks:
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    external: true
+
+
