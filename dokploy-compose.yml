@@ -33,6 +33,40 @@ services:
     networks:
       - dokploy-network
 
+  turn:
+    image: instrumentisto/coturn:4.6.2
+    container_name: fraudsense-turn
+    restart: unless-stopped
+    command:
+      - -n
+      - --log-file=stdout
+      - --lt-cred-mech
+      - --realm=${TURN_REALM}
+      - --server-name=${TURN_DOMAIN}
+      - --user=${TURN_USER}:${TURN_PASSWORD}
+      - --fingerprint
+      - --listening-port=3478
+      - --external-ip=${TURN_PUBLIC_IP}
+      - --min-port=${TURN_MIN_PORT:-49152}
+      - --max-port=${TURN_MAX_PORT:-49999}
+      - --no-tls
+      - --no-cli
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "49152-49999:49152-49999/udp"
+    networks:
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.udp.routers.fraudsense-turn-udp.entrypoints=turn-udp"
+      - "traefik.udp.routers.fraudsense-turn-udp.service=fraudsense-turn-udp"
+      - "traefik.udp.services.fraudsense-turn-udp.loadbalancer.server.port=3478"
+      - "traefik.tcp.routers.fraudsense-turn-tcp.entrypoints=turn-tcp"
+      - "traefik.tcp.routers.fraudsense-turn-tcp.rule=HostSNI(`*`)"
+      - "traefik.tcp.routers.fraudsense-turn-tcp.service=fraudsense-turn-tcp"
+      - "traefik.tcp.services.fraudsense-turn-tcp.loadbalancer.server.port=3478"
+
 networks:
   dokploy-network:
     external: true
