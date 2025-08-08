@@ -14,16 +14,22 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
   const localVideoRef = useRef();
   const remoteVideoRef = useRef();
   const peerConnectionRef = useRef(null);
+  const remoteMediaStreamRef = useRef(null);
+  const pendingRemoteIceCandidatesRef = useRef([]);
   const localAudioContextRef = useRef(null);
   const remoteAudioContextRef = useRef(null);
   const localAnalyserRef = useRef(null);
   const remoteAnalyserRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    initializeCall();
-    
+    // Guard against React 18 StrictMode double-invoke in dev
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      initializeCall();
+    }
     return () => {
       cleanup();
     };
@@ -120,13 +126,34 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
       // Set up audio recording for fraud detection
       setupAudioRecording(stream);
 
-      // Create RTCPeerConnection
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' }
-        ]
-      });
+      // Create RTCPeerConnection with optional TURN from env
+      const turnUrl = import.meta.env.VITE_TURN_URL;
+      const turnUsername = import.meta.env.VITE_TURN_USERNAME;
+      const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
+      const iceServers = [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+      ];
+      // Twilio STUN may be blocked on some networks; enable explicitly via env if desired
+      const useTwilioStun = import.meta.env.VITE_USE_TWILIO_STUN === '1';
+      if (useTwilioStun) {
+        iceServers.push({ urls: 'stun:global.stun.twilio.com:3478' });
+      }
+      if (turnUrl && turnUsername && turnCredential) {
+        iceServers.push({ urls: turnUrl, username: turnUsername, credential: turnCredential });
+        console.log('🧊 Using TURN server from env');
+      } else {
+        console.log('🧊 No TURN configured; falling back to STUN only');
+      }
+
+      const forceRelayOnly = import.meta.env.VITE_ICE_RELAY_ONLY === '1';
+      const rtcConfig = { iceServers };
+      if (forceRelayOnly) {
+        rtcConfig.iceTransportPolicy = 'relay';
+        console.log('🧊 Forcing relay-only via TURN for connectivity testing');
+      }
+      const pc = new RTCPeerConnection(rtcConfig);
 
       // Add connection state logging
       pc.onconnectionstatechange = () => {
@@ -141,6 +168,14 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
         console.log('🔍 ICE gathering state:', pc.iceGatheringState);
       };
 
+      pc.onicecandidateerror = (event) => {
+        console.warn('🧊 ICE candidate error:', {
+          errorCode: event.errorCode,
+          errorText: event.errorText,
+          url: event.url
+        });
+      };
+
       // Add local stream to peer connection
       console.log('📤 Adding local tracks to peer connection...');
       stream.getTracks().forEach((track, index) => {
@@ -148,15 +183,29 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
         pc.addTrack(track, stream);
       });
 
-      // Handle remote stream
+      // Handle remote tracks using a persistent MediaStream (more robust across browsers)
       pc.ontrack = (event) => {
-        console.log('📥 Received remote track:', event.track.kind);
-        const [remoteStream] = event.streams;
-        console.log('🎬 Remote stream tracks:', remoteStream.getTracks().length);
-        setRemoteStream(remoteStream);
-        
+        console.log('📥 Received remote track:', event.track.kind, {
+          hasStreamsArray: Array.isArray(event.streams),
+          streamsLength: event.streams?.length || 0
+        });
+
+        if (!remoteMediaStreamRef.current) {
+          remoteMediaStreamRef.current = new MediaStream();
+        }
+
+        // Avoid duplicate tracks
+        const inboundStream = remoteMediaStreamRef.current;
+        const exists = inboundStream.getTracks().some(t => t.id === event.track.id);
+        if (!exists) {
+          inboundStream.addTrack(event.track);
+          console.log('➕ Added remote track to aggregated stream. Total tracks:', inboundStream.getTracks().length);
+        }
+
+        setRemoteStream(inboundStream);
+
         // Set up audio level monitoring for remote stream
-        setupAudioLevelMonitoring(remoteStream, 'remote');
+        setupAudioLevelMonitoring(inboundStream, 'remote');
         setCallAccepted(true);
       };
 
@@ -178,10 +227,7 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
       // If this is an outgoing call, create offer
       if (callData.type === 'outgoing') {
         console.log('📞 Creating offer for outgoing call...');
-        const offer = await pc.createOffer({
-          offerToReceiveAudio: true,
-          offerToReceiveVideo: true
-        });
+        const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         console.log('📤 Sending offer');
         
@@ -197,6 +243,20 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
       if (callData.type === 'incoming' && callData.offer) {
         console.log('📞 Handling incoming call offer...');
         await pc.setRemoteDescription(new RTCSessionDescription(callData.offer));
+
+        // Apply any ICE candidates that arrived before remoteDescription was set
+        if (pendingRemoteIceCandidatesRef.current.length > 0) {
+          console.log(`🧊 Applying buffered ICE candidates: ${pendingRemoteIceCandidatesRef.current.length}`);
+          for (const candidate of pendingRemoteIceCandidatesRef.current) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (err) {
+              console.error('❌ Error applying buffered ICE candidate:', err);
+            }
+          }
+          pendingRemoteIceCandidatesRef.current = [];
+        }
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         console.log('📤 Sending answer');
@@ -220,6 +280,19 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
       try {
         await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
         console.log('✅ Remote description set successfully');
+
+        // Apply any ICE candidates that arrived before remoteDescription was set
+        if (pendingRemoteIceCandidatesRef.current.length > 0) {
+          console.log(`🧊 Applying buffered ICE candidates (answer): ${pendingRemoteIceCandidatesRef.current.length}`);
+          for (const candidate of pendingRemoteIceCandidatesRef.current) {
+            try {
+              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (err) {
+              console.error('❌ Error applying buffered ICE candidate after answer:', err);
+            }
+          }
+          pendingRemoteIceCandidatesRef.current = [];
+        }
       } catch (error) {
         console.error('❌ Error setting remote description:', error);
       }
@@ -235,8 +308,14 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
     console.log('📥 Received ICE candidate');
     if (peerConnectionRef.current && data.candidate) {
       try {
-        await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
-        console.log('✅ ICE candidate added successfully');
+        if (peerConnectionRef.current.remoteDescription) {
+          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+          console.log('✅ ICE candidate added successfully');
+        } else {
+          // Buffer until remote description is set
+          pendingRemoteIceCandidatesRef.current.push(data.candidate);
+          console.log('🧊 Buffered ICE candidate (no remoteDescription yet)');
+        }
       } catch (error) {
         console.error('❌ Error adding ICE candidate:', error);
       }
@@ -406,6 +485,12 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
     }
+    if (remoteVideoRef.current) {
+      try { remoteVideoRef.current.srcObject = null; } catch (_) {}
+    }
+    if (localVideoRef.current) {
+      try { localVideoRef.current.srcObject = null; } catch (_) {}
+    }
     
     // Clean up audio contexts
     if (localAudioContextRef.current) {
@@ -418,6 +503,8 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
     setLocalStream(null);
     setRemoteStream(null);
     peerConnectionRef.current = null;
+    remoteMediaStreamRef.current = null;
+    pendingRemoteIceCandidatesRef.current = [];
     localAudioContextRef.current = null;
     remoteAudioContextRef.current = null;
     localAnalyserRef.current = null;
