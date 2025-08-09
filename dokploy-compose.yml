@@ -22,9 +22,10 @@ services:
       # TURN Server configuration
       - TURN_DOMAIN=${TURN_DOMAIN:-turn.fauzanazz.com}
       - TURN_PORT=${TURN_PORT:-3478}
+      - TURN_TLS_PORT=${TURN_TLS_PORT:-5349}
       - TURN_USER=${TURN_USER:-usermonyet}
       - TURN_PASSWORD=${TURN_PASSWORD:-jasonjahja}
-      - TURN_ENABLE_TLS=${TURN_ENABLE_TLS:-false}
+      - TURN_ENABLE_TLS=${TURN_ENABLE_TLS:-true}
       # Server port
       - PORT=3001
     expose:
@@ -50,6 +51,10 @@ services:
     container_name: fraudsense-turn
     restart: unless-stopped
     network_mode: "host"
+    volumes:
+      # Mount Let's Encrypt certs (adjust host paths to match your server)
+      - /etc/letsencrypt/live/turn.fauzanazz.com/fullchain.pem:/etc/coturn/certs/fullchain.pem:ro
+      - /etc/letsencrypt/live/turn.fauzanazz.com/privkey.pem:/etc/coturn/certs/privkey.pem:ro
     environment:
       - TURN_REALM=${TURN_REALM:-turn.fauzanazz.com}
       - TURN_USER=${TURN_USER:-usermonyet}
@@ -65,21 +70,31 @@ services:
       --user=$${TURN_USER}:$${TURN_PASSWORD}
       --server-name=$${TURN_DOMAIN}
       --listening-port=3478
+      --tls-listening-port=5349
       --external-ip=$${TURN_PUBLIC_IP}
       --min-port=$${TURN_MIN_PORT}
       --max-port=$${TURN_MAX_PORT}
       --fingerprint
       --no-multicast-peers
       --no-loopback-peers
-      --no-tls
-      --no-dtls
+      --no-tlsv1
+      --no-tlsv1_1
+      --ec-curve-name=prime256v1
+      --cert=/etc/coturn/certs/fullchain.pem
+      --pkey=/etc/coturn/certs/privkey.pem
       --no-cli
       --verbose
       --log-file=stdout
+      --simple-log
+      --new-log-timestamp
       --user-quota=50
       --total-quota=1200
       --max-bps=3000000
       --stale-nonce
+      --denied-peer-ip=0.0.0.0-0.255.255.255
+      --denied-peer-ip=10.0.0.0-10.255.255.255
+      --denied-peer-ip=172.16.0.0-172.31.255.255
+      --denied-peer-ip=192.168.0.0-192.168.255.255
 
 networks:
   dokploy-network:

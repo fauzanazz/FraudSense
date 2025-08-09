@@ -8,11 +8,11 @@ VITE_API_BASE_URL=https://your-backend-domain.com
 ```
 
 ### Optional TURN Server Fallback
-The frontend primarily gets TURN configuration from the backend via WebSocket. However, you can set fallback environment variables:
+The frontend primarily gets TURN configuration from the backend via WebSocket. In Dokploy production, the backend will provide `turns:` when TLS is enabled. You can set fallback environment variables (used only if backend config fails):
 
 ```env
 # TURN server fallback (only used if backend config fails)
-VITE_TURN_SERVER=your-server-ip-or-domain.com
+VITE_TURN_SERVER=turn.fauzanazz.com
 VITE_TURN_USER=fraudsense
 VITE_TURN_SECRET=fraudsense123
 
@@ -30,7 +30,7 @@ VITE_USE_TWILIO_STUN=0 # Set to 1 to enable additional STUN servers
 
 ### Production Considerations
 - The frontend will automatically request TURN configuration from your backend
-- Ensure your backend has proper TURN environment variables set
+- Ensure your backend has `TURN_ENABLE_TLS=true` and exposes 5349/TCP if you want `turns:`
 - TURN fallback environment variables are only used if backend config fails
 - For security, avoid hardcoding TURN credentials in the frontend
 

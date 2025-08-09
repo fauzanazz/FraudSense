@@ -7,7 +7,7 @@
 - Domain name configured
 - SSL certificates (optional for TURN over TLS)
 
-### 2. Environment Variables for Dokploy
+### 2. Environment Variables for Dokploy (Production)
 
 Set these environment variables in your Dokploy project:
 
@@ -23,12 +23,14 @@ MONGODB_URI=mongodb://admin:password123@mongodb:27017/chatapp?authSource=admin
 SOCKETIO_CORS_ORIGINS=https://your-frontend-domain.com,https://www.your-frontend-domain.com
 
 # TURN Server Configuration
-TURN_DOMAIN=your-server-ip-or-domain.com
+# Point TURN_DOMAIN to your public TURN DNS name managed by Dokploy/reverse proxy
+TURN_DOMAIN=turn.fauzanazz.com
 TURN_PORT=3478
 TURN_TLS_PORT=5349
 TURN_USER=fraudsense
 TURN_PASSWORD=fraudsense123
-TURN_ENABLE_TLS=false
+# Enable TLS so the backend returns a `turns:` URL to clients
+TURN_ENABLE_TLS=true
 
 # AI Services (if applicable)
 SAILOR2_ENDPOINT=http://sailor2:8000
@@ -51,7 +53,7 @@ The provided `docker-compose.yml` includes:
 Ensure these ports are accessible on your server:
 - **3001**: Node.js application (HTTP)
 - **3478**: TURN server (UDP/TCP)
-- **5349**: TURN server TLS (TCP) - if TLS enabled
+- **5349**: TURN server TLS (TCP)
 - **10000-20000**: TURN relay ports (UDP)
 
 ### 5. Deployment Steps
@@ -72,11 +74,13 @@ Ensure these ports are accessible on your server:
 
 ### 6. TURN Server Configuration
 
-The TURN server is configured with:
+The TURN server is configured with (hardened TLS for production Dokploy):
 - **Username**: `fraudsense`
 - **Password**: `fraudsense123`
 - **Realm**: `fraudsense`
-- **Ports**: 3478 (STUN/TURN), 5349 (TURNS), 10000-20000 (relay)
+- **Ports**: 3478 (STUN/TURN), 5349 (TURNS), 49152-65535 (relay)
+- **TLS**: Only TLSv1.2/1.3 allowed (`--no-tlsv1 --no-tlsv1_1`)
+- **EC**: `--ec-curve-name=prime256v1`
 
 **Security Note**: Change the default username and password in production!
 
@@ -108,15 +112,24 @@ turnutils_uclient -t -u fraudsense -w fraudsense123 your-server-domain.com
 - Configure external IP in turnserver config
 - Monitor resource usage
 
-### 9. SSL/TLS Configuration (Optional)
+### 9. SSL/TLS Configuration
 
-For TURN over TLS, add certificates to the turnserver config:
-```conf
-cert=/etc/ssl/certs/turn_server_cert.pem
-pkey=/etc/ssl/private/turn_server_pkey.pem
+In Dokploy, mount your Let's Encrypt certs into the TURN container and enable TLS:
+
+```yaml
+volumes:
+  - /etc/letsencrypt/live/turn.fauzanazz.com/fullchain.pem:/etc/coturn/certs/fullchain.pem:ro
+  - /etc/letsencrypt/live/turn.fauzanazz.com/privkey.pem:/etc/coturn/certs/privkey.pem:ro
+command: >
+  turnserver \
+    --tls-listening-port=5349 \
+    --no-tlsv1 --no-tlsv1_1 \
+    --ec-curve-name=prime256v1 \
+    --cert=/etc/coturn/certs/fullchain.pem \
+    --pkey=/etc/coturn/certs/privkey.pem
 ```
 
-Then set `TURN_ENABLE_TLS=true` in environment variables.
+Ensure backend `TURN_ENABLE_TLS=true` so clients receive `turns:` in ICE servers.
 
 ### 10. Monitoring
 
