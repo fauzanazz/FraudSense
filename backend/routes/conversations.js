@@ -29,7 +29,9 @@ router.post('/', async (req, res) => {
     });
     
     if (existingConversation) {
-      return res.json(existingConversation);
+      const populatedExisting = await Conversation.findById(existingConversation._id)
+        .populate('participants', 'username');
+      return res.json(populatedExisting);
     }
     
     const newConversation = new Conversation({

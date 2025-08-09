@@ -152,6 +152,15 @@ io.on('connection', (socket) => {
           credential
         }
       );
+      // Optionally include TLS TURN if enabled
+      if (process.env.TURN_ENABLE_TLS === '1' || process.env.TURN_ENABLE_TLS === 'true') {
+        const tlsPort = process.env.TURN_TLS_PORT || '5349';
+        iceServers.push({
+          urls: [`turns:${turnDomain}:${tlsPort}?transport=tcp`],
+          username,
+          credential
+        });
+      }
     } else {
       console.warn('⚠️ TURN env missing (TURN_DOMAIN/USER/PASSWORD). Falling back to STUN only');
     }

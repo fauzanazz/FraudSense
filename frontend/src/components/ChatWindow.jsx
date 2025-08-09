@@ -3,7 +3,7 @@ import axios from 'axios';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 
-function ChatWindow({ conversation, user, socket, onStartCall }) {
+function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
   const [messages, setMessages] = useState([]);
   const [fraudAlerts, setFraudAlerts] = useState([]);
   const [fraudAnalysisResults, setFraudAnalysisResults] = useState([]);
@@ -81,7 +81,13 @@ function ChatWindow({ conversation, user, socket, onStartCall }) {
   };
 
   const getOtherParticipant = () => {
-    return conversation.participants.find(p => p._id !== user._id);
+    // conversation.participants may contain ObjectIds (strings) or populated user objects
+    const participant = conversation.participants.find(p => (typeof p === 'string' ? p : p._id) !== user._id);
+    if (!participant) return null;
+    if (typeof participant === 'string') {
+      return users.find(u => u._id === participant) || { _id: participant, username: 'Unknown User' };
+    }
+    return participant;
   };
 
   if (!conversation) {

@@ -143,6 +143,7 @@ function ChatLayout({ user, socket, users }) {
             user={user}
             socket={socket}
             onStartCall={startCall}
+            users={users}
           />
         ) : (
           <div className="no-conversation">
