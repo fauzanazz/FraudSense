@@ -68,6 +68,7 @@ io.on('connection', (socket) => {
   socket.on('sendMessage', async (messageData) => {
     try {
       const Message = require('./models/Message');
+      const Conversation = require('./models/Conversation');
       const newMessage = new Message({
         conversationId: messageData.conversationId,
         senderId: messageData.senderId,
@@ -76,6 +77,15 @@ io.on('connection', (socket) => {
       });
       
       await newMessage.save();
+      // Update conversation last message preview and timestamp
+      try {
+        await Conversation.findByIdAndUpdate(messageData.conversationId, {
+          lastMessage: messageData.content,
+          lastMessageTime: new Date()
+        });
+      } catch (convErr) {
+        console.error('Error updating conversation last message:', convErr);
+      }
       
       io.to(messageData.conversationId).emit('receiveMessage', {
         ...newMessage.toObject(),

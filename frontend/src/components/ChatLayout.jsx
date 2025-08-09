@@ -34,6 +34,27 @@ function ChatLayout({ user, socket, users }) {
     };
   }, []);
 
+  // Keep conversation previews in sync when messages arrive in real time
+  useEffect(() => {
+    const handleReceiveMessageForList = (message) => {
+      setConversations((prev) => {
+        const index = prev.findIndex((c) => c._id === message.conversationId);
+        if (index === -1) return prev;
+        const updated = {
+          ...prev[index],
+          lastMessage: message.content || prev[index].lastMessage,
+          lastMessageTime: message.timestamp || new Date(),
+        };
+        const next = [...prev];
+        next.splice(index, 1);
+        return [updated, ...next];
+      });
+    };
+
+    socket.on('receiveMessage', handleReceiveMessageForList);
+    return () => socket.off('receiveMessage', handleReceiveMessageForList);
+  }, []);
+
   const fetchConversations = async () => {
     try {
       const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/conversations/${user._id}`);
