@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  turn:
+    image: coturn/coturn:latest
+    container_name: fraudsense-turn-local
+    restart: unless-stopped
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "50000-50100:50000-50100/udp"
+    environment:
+      - TURN_REALM=${TURN_REALM:-turn.local}
+      - TURN_USER=${TURN_USER:-localuser}
+      - TURN_PASSWORD=${TURN_PASSWORD:-localpassword}
+      - TURN_DOMAIN=${TURN_DOMAIN:-localhost}
+    command:
+      - -n
+      - --lt-cred-mech
+      - --realm=turn.local
+      - --user=localuser:localpassword
+      - --server-name=localhost
+      - --listening-port=3478
+      - --min-port=50000
+      - --max-port=50100
+      - --fingerprint
+      - --no-tls
+      - --no-dtls
+      - --log-file=stdout
+
