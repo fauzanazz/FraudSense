@@ -23,6 +23,7 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const initializedRef = useRef(false);
+  const hasCleanedUpRef = useRef(false);
 
   useEffect(() => {
     // Guard against React 18 StrictMode double-invoke in dev
@@ -502,32 +503,68 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
   };
 
   const cleanup = () => {
+    if (hasCleanedUpRef.current) {
+      return;
+    }
+    hasCleanedUpRef.current = true;
     console.log('🧹 Cleaning up call resources');
-    
-    // Stop audio recording
-    stopAudioRecording();
-    
-    if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
-    }
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-    }
+
+    // Immediately detach media from elements to release capture indicators
     if (remoteVideoRef.current) {
       try { remoteVideoRef.current.srcObject = null; } catch (_) {}
     }
     if (localVideoRef.current) {
       try { localVideoRef.current.srcObject = null; } catch (_) {}
     }
-    
+
+    // Stop audio recording
+    stopAudioRecording();
+
+    // Proactively stop and remove senders/transceivers
+    if (peerConnectionRef.current) {
+      try {
+        const pc = peerConnectionRef.current;
+        pc.getSenders?.().forEach((sender) => {
+          try { sender.replaceTrack?.(null); } catch (_) {}
+          if (sender.track) {
+            try { sender.track.stop(); } catch (_) {}
+          }
+          try { pc.removeTrack?.(sender); } catch (_) {}
+        });
+        pc.getTransceivers?.().forEach((t) => {
+          try { t.direction = 'inactive'; } catch (_) {}
+          try { t.stop?.(); } catch (_) {}
+        });
+      } catch (_) {}
+    }
+
+    // Stop local media tracks
+    try {
+      if (localStream) {
+        localStream.getTracks().forEach(track => {
+          try { track.stop(); } catch (_) {}
+        });
+      }
+    } catch (_) {}
+
+    // Close peer connection and clear handlers
+    if (peerConnectionRef.current) {
+      try {
+        const pc = peerConnectionRef.current;
+        pc.ontrack = null;
+        pc.onicecandidate = null;
+        pc.onconnectionstatechange = null;
+        pc.oniceconnectionstatechange = null;
+        pc.onicegatheringstatechange = null;
+        pc.onicecandidateerror = null;
+        pc.close();
+      } catch (_) {}
+    }
+
     // Clean up audio contexts
-    if (localAudioContextRef.current) {
-      localAudioContextRef.current.close();
-    }
-    if (remoteAudioContextRef.current) {
-      remoteAudioContextRef.current.close();
-    }
-    
+    try { localAudioContextRef.current?.close?.(); } catch (_) {}
+    try { remoteAudioContextRef.current?.close?.(); } catch (_) {}
+
     setLocalStream(null);
     setRemoteStream(null);
     peerConnectionRef.current = null;
