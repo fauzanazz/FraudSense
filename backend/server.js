@@ -129,6 +129,30 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('get-turn-config', (callback) => {
+    const turnConfig = {
+      iceServers: [
+        { 
+          urls: [`stun:${process.env.TURN_SERVER_URL || 'turnserver:3478'}`] 
+        },
+        {
+          urls: [`turn:${process.env.TURN_SERVER_URL || 'turnserver:3478'}?transport=udp`],
+          username: 'temp-user',
+          credential: process.env.TURN_SECRET || 'myturnsecret123',
+          credentialType: 'password'
+        },
+        {
+          urls: [`turn:${process.env.TURN_SERVER_URL || 'turnserver:3478'}?transport=tcp`],
+          username: 'temp-user', 
+          credential: process.env.TURN_SECRET || 'myturnsecret123',
+          credentialType: 'password'
+        }
+      ]
+    };
+    console.log('🔧 TURN config requested:', turnConfig);
+    if (callback) callback(turnConfig);
+  });
+
   socket.on('call-offer', (data) => {
     console.log('📞 Call offer received:', { 
       from: socket.id, 

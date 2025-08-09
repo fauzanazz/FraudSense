@@ -126,33 +126,61 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
       // Set up audio recording for fraud detection
       setupAudioRecording(stream);
 
-      // Create RTCPeerConnection with optional TURN from env
-      const turnUrl = import.meta.env.VITE_TURN_URL;
-      const turnUsername = import.meta.env.VITE_TURN_USERNAME;
-      const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
-      const iceServers = [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
-      ];
-      // Twilio STUN may be blocked on some networks; enable explicitly via env if desired
-      const useTwilioStun = import.meta.env.VITE_USE_TWILIO_STUN === '1';
-      if (useTwilioStun) {
-        iceServers.push({ urls: 'stun:global.stun.twilio.com:3478' });
-      }
-      if (turnUrl && turnUsername && turnCredential) {
-        iceServers.push({ urls: turnUrl, username: turnUsername, credential: turnCredential });
-        console.log('🧊 Using TURN server from env');
-      } else {
-        console.log('🧊 No TURN configured; falling back to STUN only');
+      // Get TURN configuration from backend
+      console.log('🧊 Requesting TURN configuration from backend...');
+      let rtcConfig = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ]
+      };
+
+      try {
+        // Request TURN config from backend
+        const turnConfig = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('TURN config timeout')), 5000);
+          socket.emit('get-turn-config', (config) => {
+            clearTimeout(timeout);
+            resolve(config);
+          });
+        });
+
+        if (turnConfig && turnConfig.iceServers) {
+          rtcConfig = turnConfig;
+          console.log('✅ Using TURN configuration from backend:', rtcConfig);
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to get TURN config from backend, using fallback:', error);
+        
+        // Fallback to environment variables
+        const turnUrl = import.meta.env.VITE_TURN_SERVER;
+        const turnSecret = import.meta.env.VITE_TURN_SECRET;
+        const turnRealm = import.meta.env.VITE_TURN_REALM || 'fraudsense.local';
+        
+        if (turnUrl && turnSecret) {
+          rtcConfig.iceServers.push({
+            urls: [`turn:${turnUrl}?transport=udp`],
+            username: 'temp-user',
+            credential: turnSecret,
+            credentialType: 'password'
+          });
+          rtcConfig.iceServers.push({
+            urls: [`turn:${turnUrl}?transport=tcp`],
+            username: 'temp-user',
+            credential: turnSecret,
+            credentialType: 'password'
+          });
+          console.log('🧊 Using TURN server from environment variables');
+        }
       }
 
       const forceRelayOnly = import.meta.env.VITE_ICE_RELAY_ONLY === '1';
-      const rtcConfig = { iceServers };
       if (forceRelayOnly) {
         rtcConfig.iceTransportPolicy = 'relay';
         console.log('🧊 Forcing relay-only via TURN for connectivity testing');
       }
+      
       const pc = new RTCPeerConnection(rtcConfig);
 
       // Add connection state logging

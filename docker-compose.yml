@@ -1,9 +1,87 @@
 version: '3.8'
 
 services:
+  # TURN Server for WebRTC
+  turnserver:
+    image: instrumentisto/coturn:4.6
+    container_name: fraudsense-turnserver
+    restart: unless-stopped
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49152-65535:49152-65535/udp"
+    environment:
+      - TURN_STATIC_AUTH_SECRET=${TURN_SECRET:-myturnsecret123}
+      - TURN_REALM=${TURN_REALM:-fraudsense.local}
+    command: >
+      turnserver
+      --lt-cred-mech
+      --use-auth-secret
+      --static-auth-secret=$${TURN_STATIC_AUTH_SECRET}
+      --realm=$${TURN_REALM}
+      --min-port=49152
+      --max-port=65535
+      --listening-port=3478
+      --fingerprint
+      --no-multicast-peers
+      --no-tls
+      --no-dtls
+      --verbose
+      --log-file=stdout
+    networks:
+      - chatapp-network
+
+  # Backend API & Socket.IO Server
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fraudsense-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - MONGODB_URI=mongodb://admin:password123@mongodb:27017/chatapp?authSource=admin
+      - SOCKETIO_CORS_ORIGINS=${FRONTEND_URL:-http://localhost:5173}
+      - TURN_SERVER_URL=${TURN_SERVER_URL:-turnserver:3478}
+      - TURN_SECRET=${TURN_SECRET:-myturnsecret123}
+      - TURN_REALM=${TURN_REALM:-fraudsense.local}
+    depends_on:
+      - mongodb
+      - turnserver
+    networks:
+      - chatapp-network
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fraudsense-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=${BACKEND_URL:-http://localhost:3001}
+      - VITE_SOCKET_URL=${BACKEND_URL:-http://localhost:3001}
+      - VITE_TURN_SERVER=${TURN_SERVER_PUBLIC_URL:-localhost:3478}
+      - VITE_TURN_SECRET=${TURN_SECRET:-myturnsecret123}
+      - VITE_TURN_REALM=${TURN_REALM:-fraudsense.local}
+    depends_on:
+      - backend
+    networks:
+      - chatapp-network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
   mongodb:
     image: mongo:7.0
-    container_name: chatapp-mongodb
+    container_name: fraudsense-mongodb
     restart: unless-stopped
     ports:
       - "27017:27017"
@@ -19,7 +97,7 @@ services:
 
   mongo-express:
     image: mongo-express:1.0.0
-    container_name: chatapp-mongo-express
+    container_name: fraudsense-mongo-express
     restart: unless-stopped
     ports:
       - "8081:8081"

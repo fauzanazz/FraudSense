@@ -1,19 +1,27 @@
+version: '3.8'
+
 services:
+  # Backend API & WebRTC Signaling Server
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    container_name: fraudsense-backend
     restart: unless-stopped
     environment:
       - NODE_ENV=production
-      # Replace with your MongoDB Atlas URI
-      - MONGODB_URI=${MONGODB_URI}
-      # Allow Socket.IO and REST CORS from these origins (comma-separated)
+      # MongoDB connection (use MongoDB Atlas or hosted instance for production)
+      - MONGODB_URI=${MONGODB_URI:-mongodb://admin:password123@mongodb:27017/chatapp?authSource=admin}
+      # CORS configuration for Socket.IO and REST API
       - SOCKETIO_CORS_ORIGINS=${SOCKETIO_CORS_ORIGINS:-https://fraudsense-frontend.fauzanazz.com}
-      # Optional: configure model endpoints if used
+      # TURN server configuration for WebRTC
+      - TURN_SERVER_URL=${TURN_SERVER_URL:-turn:3478}
+      - TURN_SECRET=${TURN_SECRET:-myturnsecret123}
+      - TURN_REALM=${TURN_REALM:-fraudsense.local}
+      # AI Model endpoints (if using external services)
       - SAILOR2_ENDPOINT=${SAILOR2_ENDPOINT}
       - QWEN2_AUDIO_ENDPOINT=${QWEN2_AUDIO_ENDPOINT}
-      # Fraud analysis knobs
+      # Fraud detection configuration
       - FRAUD_ANALYSIS_DEBOUNCE=${FRAUD_ANALYSIS_DEBOUNCE:-3000}
       - ENABLE_REAL_TIME_ALERTS=${ENABLE_REAL_TIME_ALERTS:-true}
       - STORE_FRAUD_RESULTS=${STORE_FRAUD_RESULTS:-true}
@@ -22,41 +30,87 @@ services:
     expose:
       - "3001"
     labels:
+      # Traefik labels for reverse proxy and SSL
       - "traefik.enable=true"
-      # Set your domain if exposing via Traefik; otherwise remove labels
       - "traefik.http.routers.fraudsense-backend.rule=Host(`${BACKEND_DOMAIN}`)"
       - "traefik.http.routers.fraudsense-backend.entrypoints=websecure"
       - "traefik.http.routers.fraudsense-backend.tls.certresolver=letsencrypt"
       - "traefik.http.services.fraudsense-backend.loadbalancer.server.port=3001"
+      # WebSocket support
+      - "traefik.http.routers.fraudsense-backend.middlewares=sslheader"
+      - "traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto=https"
+    depends_on:
+      - turn
     networks:
       - dokploy-network
 
+  # Frontend React Application
+  frontend:
+    build:
+      context: ./frontend  
+      dockerfile: Dockerfile
+    container_name: fraudsense-frontend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - VITE_API_URL=${BACKEND_URL:-https://api.fraudsense.com}
+      - VITE_SOCKET_URL=${BACKEND_URL:-https://api.fraudsense.com}
+      - VITE_TURN_SERVER=${TURN_SERVER_PUBLIC_URL:-turn.fraudsense.com:3478}
+      - VITE_TURN_SECRET=${TURN_SECRET:-myturnsecret123}
+      - VITE_TURN_REALM=${TURN_REALM:-fraudsense.local}
+    expose:
+      - "3000"
+    labels:
+      # Traefik labels for frontend
+      - "traefik.enable=true"
+      - "traefik.http.routers.fraudsense-frontend.rule=Host(`${FRONTEND_DOMAIN}`)"
+      - "traefik.http.routers.fraudsense-frontend.entrypoints=websecure"
+      - "traefik.http.routers.fraudsense-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.fraudsense-frontend.loadbalancer.server.port=3000"
+    depends_on:
+      - backend
+    networks:
+      - dokploy-network
+
+  # TURN Server for WebRTC NAT Traversal
   turn:
-    image: instrumentisto/coturn:latest
+    image: instrumentisto/coturn:4.6
     container_name: fraudsense-turn
     restart: unless-stopped
-    command:
-      - -n
-      - --log-file=stdout
-      - --lt-cred-mech
-      - --realm=${TURN_REALM}
-      - --server-name=${TURN_DOMAIN}
-      - --user=${TURN_USER}:${TURN_PASSWORD}
-      - --fingerprint
-      - --listening-port=3478
-      - --external-ip=${TURN_PUBLIC_IP}
-      - --min-port=${TURN_MIN_PORT:-49152}
-      - --max-port=${TURN_MAX_PORT:-49999}
-      - --no-tls
-      - --no-cli
+    environment:
+      - TURN_STATIC_AUTH_SECRET=${TURN_SECRET:-myturnsecret123}
+      - TURN_REALM=${TURN_REALM:-fraudsense.local}
+    command: >
+      turnserver
+      --lt-cred-mech
+      --use-auth-secret
+      --static-auth-secret=$${TURN_STATIC_AUTH_SECRET}
+      --realm=$${TURN_REALM}
+      --server-name=${TURN_DOMAIN:-turn.fraudsense.com}
+      --listening-port=3478
+      --external-ip=${TURN_PUBLIC_IP}
+      --min-port=${TURN_MIN_PORT:-49152}
+      --max-port=${TURN_MAX_PORT:-49220}
+      --fingerprint
+      --no-multicast-peers
+      --no-tls
+      --no-dtls
+      --no-cli
+      --verbose
+      --log-file=stdout
+      --denied-peer-ip=10.0.0.0-10.255.255.255
+      --denied-peer-ip=192.168.0.0-192.168.255.255
+      --denied-peer-ip=172.16.0.0-172.31.255.255
+      --user-quota=12
+      --total-quota=1200
+      --max-bps=1000000
     ports:
       - "3478:3478/tcp"
       - "3478:3478/udp"
-      # Expose a smaller relay port window if your provider restricts ranges
-      - "49160-49220:49160-49220/udp"
-    networks:
-      - dokploy-network
+      # Smaller relay port range for VPS compatibility
+      - "${TURN_MIN_PORT:-49152}-${TURN_MAX_PORT:-49220}:${TURN_MIN_PORT:-49152}-${TURN_MAX_PORT:-49220}/udp"
     labels:
+      # Traefik labels for TURN server (TCP/UDP)
       - "traefik.enable=true"
       - "traefik.udp.routers.fraudsense-turn-udp.entrypoints=turn-udp"
       - "traefik.udp.routers.fraudsense-turn-udp.service=fraudsense-turn-udp"
@@ -65,9 +119,9 @@ services:
       - "traefik.tcp.routers.fraudsense-turn-tcp.rule=HostSNI(`*`)"
       - "traefik.tcp.routers.fraudsense-turn-tcp.service=fraudsense-turn-tcp"
       - "traefik.tcp.services.fraudsense-turn-tcp.loadbalancer.server.port=3478"
+    networks:
+      - dokploy-network
 
 networks:
   dokploy-network:
     external: true
-
-
