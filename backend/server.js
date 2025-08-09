@@ -130,25 +130,33 @@ io.on('connection', (socket) => {
   });
 
   socket.on('get-turn-config', (callback) => {
-    const turnConfig = {
-      iceServers: [
-        { 
-          urls: [`stun:${process.env.TURN_SERVER_URL || 'turnserver:3478'}`] 
+    const turnDomain = process.env.TURN_DOMAIN;
+    const turnPort = process.env.TURN_PORT || '3478';
+    const username = process.env.TURN_USER;
+    const credential = process.env.TURN_PASSWORD;
+
+    const iceServers = [
+      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
+    ];
+
+    if (turnDomain && username && credential) {
+      iceServers.push(
+        {
+          urls: [`turn:${turnDomain}:${turnPort}?transport=udp`],
+          username,
+          credential
         },
         {
-          urls: [`turn:${process.env.TURN_SERVER_URL || 'turnserver:3478'}?transport=udp`],
-          username: 'temp-user',
-          credential: process.env.TURN_SECRET || 'myturnsecret123',
-          credentialType: 'password'
-        },
-        {
-          urls: [`turn:${process.env.TURN_SERVER_URL || 'turnserver:3478'}?transport=tcp`],
-          username: 'temp-user', 
-          credential: process.env.TURN_SECRET || 'myturnsecret123',
-          credentialType: 'password'
+          urls: [`turn:${turnDomain}:${turnPort}?transport=tcp`],
+          username,
+          credential
         }
-      ]
-    };
+      );
+    } else {
+      console.warn('⚠️ TURN env missing (TURN_DOMAIN/USER/PASSWORD). Falling back to STUN only');
+    }
+
+    const turnConfig = { iceServers };
     console.log('🔧 TURN config requested:', turnConfig);
     if (callback) callback(turnConfig);
   });
