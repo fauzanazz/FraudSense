@@ -131,12 +131,12 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
       console.log('🧊 Requesting TURN configuration from backend...');
       let rtcConfig = {
         iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' }
+          { urls: 'stun:stun.l.google.com:19302' }
         ],
-        iceCandidatePoolSize: 10,
-        iceTransportPolicy: 'all'
+        iceCandidatePoolSize: 2,
+        iceTransportPolicy: 'all',
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require'
       };
 
       let configAttempts = 0;
@@ -174,20 +174,15 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
             const turnSecret = import.meta.env.VITE_TURN_SECRET || 'turnpassword';
             
             if (turnUrl) {
-              rtcConfig.iceServers.push(
-                {
-                  urls: [`turn:${turnUrl}:3478?transport=udp`],
-                  username: turnUser,
-                  credential: turnSecret,
-                  credentialType: 'password'
-                },
-                {
-                  urls: [`turn:${turnUrl}:3478?transport=tcp`],
-                  username: turnUser,
-                  credential: turnSecret,
-                  credentialType: 'password'
-                }
-              );
+              rtcConfig.iceServers.push({
+                urls: [
+                  `turn:${turnUrl}:3478?transport=udp`,
+                  `turn:${turnUrl}:3478?transport=tcp`
+                ],
+                username: turnUser,
+                credential: turnSecret,
+                credentialType: 'password'
+              });
               console.log('🧊 Using TURN server from environment variables');
             }
           } else {

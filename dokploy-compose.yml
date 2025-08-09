@@ -72,14 +72,12 @@ services:
       --no-cli
       --verbose
       --log-file=stdout
-      --user-quota=12
-      --total-quota=1200
-      --max-bps=1000000
-      --denied-peer-ip=10.0.0.0-10.255.255.255
-      --denied-peer-ip=192.168.0.0-192.168.255.255
-      --denied-peer-ip=172.16.0.0-172.31.255.255
-      --allowed-peer-ip=${TURN_PUBLIC_IP}
+      --user-quota=50
+      --total-quota=0
+      --max-bps=3000000
       --stale-nonce
+      --no-loopback-peers
+      --no-multicast-peers
     ports:
       - "3478:3478/tcp"
       - "3478:3478/udp"
