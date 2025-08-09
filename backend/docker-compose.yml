@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - MONGODB_URI=${MONGODB_URI}
+      - TURN_DOMAIN=${TURN_DOMAIN}
+      - TURN_PORT=3478
+      - TURN_TLS_PORT=5349
+      - TURN_USER=${TURN_USER}
+      - TURN_PASSWORD=${TURN_PASSWORD}
+      - TURN_ENABLE_TLS=${TURN_ENABLE_TLS:-false}
+      - SOCKETIO_CORS_ORIGINS=${SOCKETIO_CORS_ORIGINS}
+    depends_on:
+      - coturn
+    networks:
+      - app-network
+
+  coturn:
+    image: coturn/coturn:latest
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp" 
+      - "5349:5349/tcp"
+      - "10000-20000:10000-20000/udp"
+    volumes:
+      - ./turnserver-prod.conf:/etc/coturn/turnserver.conf:ro
+    restart: unless-stopped
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
