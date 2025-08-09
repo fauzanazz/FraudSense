@@ -133,6 +133,7 @@ function ChatLayout({ user, socket, users }) {
           activeConversation={activeConversation}
           onSelectConversation={setActiveConversation}
           onCreateConversation={createOrSelectConversation}
+          currentUserId={user._id}
         />
       </div>
       <div className="main-content">

@@ -3,10 +3,21 @@ function ConversationList({
   users, 
   activeConversation, 
   onSelectConversation, 
-  onCreateConversation 
+  onCreateConversation,
+  currentUserId
 }) {
+  const getParticipantId = (participant) => (typeof participant === 'string' ? participant : participant._id);
+  const resolveUserName = (participant) => {
+    if (!participant) return 'Unknown User';
+    if (typeof participant === 'string') {
+      const found = users.find(u => u._id === participant);
+      return found?.username || 'Unknown User';
+    }
+    return participant.username || 'Unknown User';
+  };
+
   const getOtherParticipant = (conversation, currentUserId) => {
-    return conversation.participants.find(p => p._id !== currentUserId);
+    return conversation.participants.find(p => getParticipantId(p) !== currentUserId);
   };
 
   return (
@@ -14,7 +25,7 @@ function ConversationList({
       <h4>Conversations</h4>
       <div className="conversations">
         {conversations.map(conversation => {
-          const otherUser = getOtherParticipant(conversation, conversation.participants[0]._id);
+          const otherUser = getOtherParticipant(conversation, currentUserId);
           return (
             <div
               key={conversation._id}
@@ -24,7 +35,7 @@ function ConversationList({
               onClick={() => onSelectConversation(conversation)}
             >
               <div className="conversation-name">
-                {otherUser?.username || 'Unknown User'}
+                {resolveUserName(otherUser)}
               </div>
               <div className="last-message">
                 {conversation.lastMessage || 'No messages yet'}
