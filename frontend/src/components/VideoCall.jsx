@@ -127,52 +127,73 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
       // Set up audio recording for fraud detection
       setupAudioRecording(stream);
 
-      // Get TURN configuration from backend
+      // Get TURN configuration from backend with retry logic
       console.log('🧊 Requesting TURN configuration from backend...');
       let rtcConfig = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
           { urls: 'stun:stun2.l.google.com:19302' }
-        ]
+        ],
+        iceCandidatePoolSize: 10,
+        iceTransportPolicy: 'all'
       };
 
-      try {
-        // Request TURN config from backend
-        const turnConfig = await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('TURN config timeout')), 5000);
-          socket.emit('get-turn-config', (config) => {
-            clearTimeout(timeout);
-            resolve(config);
-          });
-        });
+      let configAttempts = 0;
+      const maxConfigAttempts = 3;
 
-        if (turnConfig && turnConfig.iceServers) {
+      while (configAttempts < maxConfigAttempts) {
+        try {
+          // Request TURN config from backend with increased timeout
+          const turnConfig = await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('TURN config timeout')), 8000);
+            socket.emit('get-turn-config', (config) => {
+              clearTimeout(timeout);
+              if (config && config.iceServers && config.iceServers.length > 0) {
+                resolve(config);
+              } else {
+                reject(new Error('Invalid TURN config received'));
+              }
+            });
+          });
+
           rtcConfig = turnConfig;
-          console.log('✅ Using TURN configuration from backend:', rtcConfig);
-        }
-      } catch (error) {
-        console.warn('⚠️ Failed to get TURN config from backend, using fallback:', error);
-        
-        // Fallback to environment variables
-        const turnUrl = import.meta.env.VITE_TURN_SERVER;
-        const turnSecret = import.meta.env.VITE_TURN_SECRET;
-        const turnRealm = import.meta.env.VITE_TURN_REALM || 'fraudsense.local';
-        
-        if (turnUrl && turnSecret) {
-          rtcConfig.iceServers.push({
-            urls: [`turn:${turnUrl}?transport=udp`],
-            username: 'temp-user',
-            credential: turnSecret,
-            credentialType: 'password'
-          });
-          rtcConfig.iceServers.push({
-            urls: [`turn:${turnUrl}?transport=tcp`],
-            username: 'temp-user',
-            credential: turnSecret,
-            credentialType: 'password'
-          });
-          console.log('🧊 Using TURN server from environment variables');
+          console.log('✅ Using TURN configuration from backend:', JSON.stringify(rtcConfig, null, 2));
+          break;
+          
+        } catch (error) {
+          configAttempts++;
+          console.warn(`⚠️ TURN config attempt ${configAttempts}/${maxConfigAttempts} failed:`, error);
+          
+          if (configAttempts >= maxConfigAttempts) {
+            console.warn('⚠️ All TURN config attempts failed, using fallback');
+            
+            // Enhanced fallback to environment variables
+            const turnUrl = import.meta.env.VITE_TURN_SERVER;
+            const turnUser = import.meta.env.VITE_TURN_USER || 'turnuser';
+            const turnSecret = import.meta.env.VITE_TURN_SECRET || 'turnpassword';
+            
+            if (turnUrl) {
+              rtcConfig.iceServers.push(
+                {
+                  urls: [`turn:${turnUrl}:3478?transport=udp`],
+                  username: turnUser,
+                  credential: turnSecret,
+                  credentialType: 'password'
+                },
+                {
+                  urls: [`turn:${turnUrl}:3478?transport=tcp`],
+                  username: turnUser,
+                  credential: turnSecret,
+                  credentialType: 'password'
+                }
+              );
+              console.log('🧊 Using TURN server from environment variables');
+            }
+          } else {
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, 1000 * configAttempts));
+          }
         }
       }
 
@@ -184,13 +205,56 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
       
       const pc = new RTCPeerConnection(rtcConfig);
 
-      // Add connection state logging
+      // Enhanced connection state monitoring with error handling
+      let connectionTimeout = null;
+      let iceTimeout = null;
+      
       pc.onconnectionstatechange = () => {
         console.log('🔗 Connection state:', pc.connectionState);
+        
+        if (pc.connectionState === 'connected') {
+          console.log('✅ WebRTC connection established');
+          if (connectionTimeout) {
+            clearTimeout(connectionTimeout);
+            connectionTimeout = null;
+          }
+        } else if (pc.connectionState === 'failed') {
+          console.error('❌ WebRTC connection failed');
+          handleConnectionFailure();
+        } else if (pc.connectionState === 'disconnected') {
+          console.warn('⚠️ WebRTC connection disconnected');
+          // Try to reconnect
+          setTimeout(() => {
+            if (pc.connectionState === 'disconnected') {
+              console.log('🔄 Attempting to restart ICE...');
+              pc.restartIce();
+            }
+          }, 2000);
+        }
       };
 
       pc.oniceconnectionstatechange = () => {
         console.log('🧊 ICE connection state:', pc.iceConnectionState);
+        
+        if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+          console.log('✅ ICE connection established');
+          if (iceTimeout) {
+            clearTimeout(iceTimeout);
+            iceTimeout = null;
+          }
+        } else if (pc.iceConnectionState === 'failed') {
+          console.error('❌ ICE connection failed');
+          handleConnectionFailure();
+        } else if (pc.iceConnectionState === 'checking') {
+          // Set timeout for ICE connection
+          if (iceTimeout) clearTimeout(iceTimeout);
+          iceTimeout = setTimeout(() => {
+            if (pc.iceConnectionState === 'checking') {
+              console.warn('⏰ ICE connection timeout, restarting ICE');
+              pc.restartIce();
+            }
+          }, 30000); // 30 second timeout
+        }
       };
 
       pc.onicegatheringstatechange = () => {
@@ -201,8 +265,34 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
         console.warn('🧊 ICE candidate error:', {
           errorCode: event.errorCode,
           errorText: event.errorText,
-          url: event.url
+          url: event.url,
+          address: event.address,
+          port: event.port
         });
+        
+        // Log specific error types for debugging
+        if (event.errorCode === 701) {
+          console.warn('🔒 TURN server authentication failed - check credentials');
+        } else if (event.errorCode === 300) {
+          console.warn('🌐 STUN/TURN server unreachable - check network/firewall');
+        }
+      };
+
+      // Add signaling state monitoring
+      pc.onsignalingstatechange = () => {
+        console.log('📡 Signaling state:', pc.signalingState);
+      };
+
+      const handleConnectionFailure = () => {
+        console.error('🚨 Connection failed - attempting recovery');
+        
+        // Clear any pending timeouts
+        if (connectionTimeout) clearTimeout(connectionTimeout);
+        if (iceTimeout) clearTimeout(iceTimeout);
+        
+        // You could implement retry logic here or show user an error
+        alert('Connection failed. Please check your network and try again.');
+        onEndCall();
       };
 
       // Add local stream to peer connection
@@ -238,16 +328,44 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
         setCallAccepted(true);
       };
 
-      // Handle ICE candidates
+      // Enhanced ICE candidate handling
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          console.log('🧊 Sending ICE candidate');
-          socket.emit('ice-candidate', {
-            to: callData.type === 'outgoing' ? callData.targetUserId : callData.fromUserId,
-            candidate: event.candidate
+          console.log('🧊 Generated ICE candidate:', {
+            type: event.candidate.type,
+            protocol: event.candidate.protocol,
+            address: event.candidate.address,
+            port: event.candidate.port,
+            priority: event.candidate.priority
           });
+          
+          const targetUserId = callData.type === 'outgoing' ? callData.targetUserId : callData.fromUserId;
+          
+          // Send with retry logic
+          const sendCandidateWithRetry = (attempt = 1) => {
+            const maxAttempts = 3;
+            
+            try {
+              socket.emit('ice-candidate', {
+                to: targetUserId,
+                candidate: event.candidate
+              });
+              
+              console.log(`✅ ICE candidate sent (attempt ${attempt})`);
+            } catch (error) {
+              console.error(`❌ Failed to send ICE candidate (attempt ${attempt}):`, error);
+              
+              if (attempt < maxAttempts) {
+                setTimeout(() => {
+                  sendCandidateWithRetry(attempt + 1);
+                }, 1000 * attempt);
+              }
+            }
+          };
+          
+          sendCandidateWithRetry();
         } else {
-          console.log('🧊 ICE gathering complete');
+          console.log('🧊 ICE gathering complete - all candidates sent');
         }
       };
 
@@ -334,24 +452,54 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
   };
 
   const handleIceCandidate = async (data) => {
-    console.log('📥 Received ICE candidate');
+    console.log('📥 Received ICE candidate:', {
+      type: data.candidate?.type,
+      protocol: data.candidate?.protocol,
+      hasRemoteDescription: !!peerConnectionRef.current?.remoteDescription
+    });
+    
     if (peerConnectionRef.current && data.candidate) {
       try {
-        if (peerConnectionRef.current.remoteDescription) {
-          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+        const pc = peerConnectionRef.current;
+        
+        if (pc.remoteDescription && pc.remoteDescription.type) {
+          // Remote description is set, add candidate immediately
+          const candidate = new RTCIceCandidate(data.candidate);
+          await pc.addIceCandidate(candidate);
           console.log('✅ ICE candidate added successfully');
         } else {
           // Buffer until remote description is set
           pendingRemoteIceCandidatesRef.current.push(data.candidate);
-          console.log('🧊 Buffered ICE candidate (no remoteDescription yet)');
+          console.log(`🧊 Buffered ICE candidate (total buffered: ${pendingRemoteIceCandidatesRef.current.length})`);
+          
+          // Set a timeout to prevent indefinite buffering
+          setTimeout(() => {
+            const index = pendingRemoteIceCandidatesRef.current.findIndex(c => c === data.candidate);
+            if (index !== -1) {
+              pendingRemoteIceCandidatesRef.current.splice(index, 1);
+              console.warn('⏰ Removed expired buffered ICE candidate');
+            }
+          }, 30000); // 30 second timeout for buffered candidates
         }
       } catch (error) {
-        console.error('❌ Error adding ICE candidate:', error);
+        console.error('❌ Error adding ICE candidate:', {
+          error: error.message,
+          candidateType: data.candidate?.type,
+          signalingState: peerConnectionRef.current?.signalingState,
+          iceConnectionState: peerConnectionRef.current?.iceConnectionState
+        });
+        
+        // Don't fail the entire call for a single candidate error
+        if (error.name === 'OperationError' && error.message.includes('remote description')) {
+          console.log('🧊 Will retry when remote description is available');
+          pendingRemoteIceCandidatesRef.current.push(data.candidate);
+        }
       }
     } else {
-      console.warn('⚠️ No peer connection or candidate data', {
+      console.warn('⚠️ Invalid ICE candidate data', {
         hasPeerConnection: !!peerConnectionRef.current,
-        hasCandidate: !!data.candidate
+        hasCandidate: !!data.candidate,
+        candidateData: data
       });
     }
   };

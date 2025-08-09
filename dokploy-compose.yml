@@ -19,6 +19,12 @@ services:
       - FRAUD_ANALYSIS_DEBOUNCE=${FRAUD_ANALYSIS_DEBOUNCE:-3000}
       - ENABLE_REAL_TIME_ALERTS=${ENABLE_REAL_TIME_ALERTS:-true}
       - STORE_FRAUD_RESULTS=${STORE_FRAUD_RESULTS:-true}
+      # TURN Server configuration
+      - TURN_DOMAIN=${TURN_DOMAIN:-turn.fauzanazz.com}
+      - TURN_PORT=${TURN_PORT:-3478}
+      - TURN_USER=${TURN_USER:-usermonyet}
+      - TURN_PASSWORD=${TURN_PASSWORD:-jasonjahja}
+      - TURN_ENABLE_TLS=${TURN_ENABLE_TLS:-false}
       # Server port
       - PORT=3001
     expose:
@@ -44,17 +50,19 @@ services:
     container_name: fraudsense-turn
     restart: unless-stopped
     environment:
-      - TURN_REALM=${TURN_REALM:-fraudsense.local}
-      - TURN_USER=${TURN_USER:-turnuser}
+      - TURN_REALM=${TURN_REALM:-turn.fauzanazz.com}
+      - TURN_USER=${TURN_USER:-usermonyet}
       - TURN_PASSWORD=${TURN_PASSWORD:-turnpassword}
+      - TURN_DOMAIN=${TURN_DOMAIN:-turn.fauzanazz.com}
+      - TURN_PUBLIC_IP=${TURN_PUBLIC_IP}
     command: >
       turnserver
       --lt-cred-mech
       --realm=$${TURN_REALM}
       --user=$${TURN_USER}:$${TURN_PASSWORD}
-      --server-name=${TURN_DOMAIN:-turn.fraudsense.com}
+      --server-name=$${TURN_DOMAIN}
       --listening-port=3478
-      --external-ip=${TURN_PUBLIC_IP}
+      --external-ip=$${TURN_PUBLIC_IP}
       --min-port=${TURN_MIN_PORT:-49152}
       --max-port=${TURN_MAX_PORT:-49220}
       --fingerprint
@@ -67,6 +75,11 @@ services:
       --user-quota=12
       --total-quota=1200
       --max-bps=1000000
+      --denied-peer-ip=10.0.0.0-10.255.255.255
+      --denied-peer-ip=192.168.0.0-192.168.255.255
+      --denied-peer-ip=172.16.0.0-172.31.255.255
+      --allowed-peer-ip=${TURN_PUBLIC_IP}
+      --stale-nonce
     ports:
       - "3478:3478/tcp"
       - "3478:3478/udp"

@@ -154,12 +154,14 @@ io.on('connection', (socket) => {
         {
           urls: [`turn:${turnDomain}:${turnPort}?transport=udp`],
           username,
-          credential
+          credential,
+          credentialType: 'password'
         },
         {
           urls: [`turn:${turnDomain}:${turnPort}?transport=tcp`],
           username,
-          credential
+          credential,
+          credentialType: 'password'
         }
       );
       // Optionally include TLS TURN if enabled
@@ -168,15 +170,21 @@ io.on('connection', (socket) => {
         iceServers.push({
           urls: [`turns:${turnDomain}:${tlsPort}?transport=tcp`],
           username,
-          credential
+          credential,
+          credentialType: 'password'
         });
       }
+      console.log('✅ TURN server configured with authentication');
     } else {
       console.warn('⚠️ TURN env missing (TURN_DOMAIN/USER/PASSWORD). Falling back to STUN only');
     }
 
-    const turnConfig = { iceServers };
-    console.log('🔧 TURN config requested:', turnConfig);
+    const turnConfig = { 
+      iceServers,
+      iceCandidatePoolSize: 10,
+      iceTransportPolicy: 'all'
+    };
+    console.log('🔧 TURN config requested:', JSON.stringify(turnConfig, null, 2));
     if (callback) callback(turnConfig);
   });
 
