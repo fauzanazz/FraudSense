@@ -49,12 +49,15 @@ services:
     image: instrumentisto/coturn:latest
     container_name: fraudsense-turn
     restart: unless-stopped
+    network_mode: "host"
     environment:
       - TURN_REALM=${TURN_REALM:-turn.fauzanazz.com}
       - TURN_USER=${TURN_USER:-usermonyet}
       - TURN_PASSWORD=${TURN_PASSWORD:-turnpassword}
       - TURN_DOMAIN=${TURN_DOMAIN:-turn.fauzanazz.com}
       - TURN_PUBLIC_IP=${TURN_PUBLIC_IP}
+      - TURN_MIN_PORT=${TURN_MIN_PORT:-49152}
+      - TURN_MAX_PORT=${TURN_MAX_PORT:-65535}
     command: >
       turnserver
       --lt-cred-mech
@@ -63,38 +66,20 @@ services:
       --server-name=$${TURN_DOMAIN}
       --listening-port=3478
       --external-ip=$${TURN_PUBLIC_IP}
-      --min-port=${TURN_MIN_PORT:-49152}
-      --max-port=${TURN_MAX_PORT:-49220}
+      --min-port=$${TURN_MIN_PORT}
+      --max-port=$${TURN_MAX_PORT}
       --fingerprint
       --no-multicast-peers
+      --no-loopback-peers
       --no-tls
       --no-dtls
       --no-cli
       --verbose
       --log-file=stdout
       --user-quota=50
-      --total-quota=0
+      --total-quota=1200
       --max-bps=3000000
       --stale-nonce
-      --no-loopback-peers
-      --no-multicast-peers
-    ports:
-      - "3478:3478/tcp"
-      - "3478:3478/udp"
-      # Smaller relay port range for VPS compatibility
-      - "${TURN_MIN_PORT:-49152}-${TURN_MAX_PORT:-49220}:${TURN_MIN_PORT:-49152}-${TURN_MAX_PORT:-49220}/udp"
-    labels:
-      # Traefik labels for TURN server (TCP/UDP)
-      - "traefik.enable=true"
-      - "traefik.udp.routers.fraudsense-turn-udp.entrypoints=turn-udp"
-      - "traefik.udp.routers.fraudsense-turn-udp.service=fraudsense-turn-udp"
-      - "traefik.udp.services.fraudsense-turn-udp.loadbalancer.server.port=3478"
-      - "traefik.tcp.routers.fraudsense-turn-tcp.entrypoints=turn-tcp"
-      - "traefik.tcp.routers.fraudsense-turn-tcp.rule=HostSNI(`*`)"
-      - "traefik.tcp.routers.fraudsense-turn-tcp.service=fraudsense-turn-tcp"
-      - "traefik.tcp.services.fraudsense-turn-tcp.loadbalancer.server.port=3478"
-    networks:
-      - dokploy-network
 
 networks:
   dokploy-network:
