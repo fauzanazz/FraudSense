@@ -65,7 +65,6 @@ services:
       - --use-auth-secret
       - --static-auth-secret=${TURN_SECRET:-myturnsecret123}
       - --realm=${TURN_REALM:-turn.fauzanazz.com}
-      - --user=${TURN_USER:-fraudsense}:${TURN_PASSWORD:-fraudsense123}
       - --server-name=${TURN_DOMAIN:-turn.fauzanazz.com}
       - --listening-port=3478
       - --min-port=50000
