@@ -24,6 +24,8 @@ services:
       - TURN_TLS_PORT=${TURN_TLS_PORT:-5349}
       - TURN_SECRET=${TURN_SECRET:-myturnsecret123}
       - TURN_REALM=${TURN_REALM:-turn.fauzanazz.com}
+      - TURN_USER=${TURN_USER:-fraudsense}
+      - TURN_PASSWORD=${TURN_PASSWORD:-fraudsense123}
       - TURN_ENABLE_TLS=${TURN_ENABLE_TLS:-false}
       # Server port
       - PORT=3001
@@ -63,6 +65,7 @@ services:
       - --use-auth-secret
       - --static-auth-secret=${TURN_SECRET:-myturnsecret123}
       - --realm=${TURN_REALM:-turn.fauzanazz.com}
+      - --user=${TURN_USER:-fraudsense}:${TURN_PASSWORD:-fraudsense123}
       - --server-name=${TURN_DOMAIN:-turn.fauzanazz.com}
       - --listening-port=3478
       - --min-port=50000

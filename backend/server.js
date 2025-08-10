@@ -201,7 +201,10 @@ io.on('connection', (socket) => {
           realm: turnRealm,
           ttlSeconds
         });
-      } else if (staticUser && staticPassword) {
+      }
+
+      // Add static fallback if provided
+      if (staticUser && staticPassword) {
         // Fallback to static long-term credentials
         iceServers.push({
           urls: turnUrls,
@@ -213,7 +216,9 @@ io.on('connection', (socket) => {
           domain: turnDomain,
           port: turnPort
         });
-      } else {
+      }
+
+      if (!turnSecret && !(staticUser && staticPassword)) {
         console.warn('⚠️ TURN credentials missing (TURN_SECRET or TURN_USER/PASSWORD). Using STUN only');
       }
     } else {
