@@ -264,12 +264,21 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
           address: event.address,
           port: event.port
         });
-        
-        // Log specific error types for debugging
-        if (event.errorCode === 701) {
-          console.warn('🔒 TURN server authentication failed - check credentials');
-        } else if (event.errorCode === 300) {
-          console.warn('🌐 STUN/TURN server unreachable - check network/firewall');
+
+        // Better mapping of common error codes
+        switch (event.errorCode) {
+          case 701:
+            if (event.errorText?.toLowerCase().includes('timed out')) {
+              console.warn('⏰ TURN allocate timed out - check firewall/NAT and external-ip');
+            } else {
+              console.warn('🔒 TURN server auth/lookup issue - verify username/secret and realm');
+            }
+            break;
+          case 300:
+            console.warn('🌐 STUN/TURN server unreachable - check DNS/network');
+            break;
+          default:
+            break;
         }
       };
 

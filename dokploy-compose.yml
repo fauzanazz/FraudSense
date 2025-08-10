@@ -59,6 +59,7 @@ services:
       - TURN_REALM=${TURN_REALM:-turn.fauzanazz.com}
       - TURN_SECRET=${TURN_SECRET:-myturnsecret123}
       - TURN_DOMAIN=${TURN_DOMAIN:-turn.fauzanazz.com}
+      - TURN_PUBLIC_IP=${TURN_PUBLIC_IP}
     command:
       - -n
       - --lt-cred-mech
@@ -66,6 +67,9 @@ services:
       - --static-auth-secret=${TURN_SECRET:-myturnsecret123}
       - --realm=${TURN_REALM:-turn.fauzanazz.com}
       - --server-name=${TURN_DOMAIN:-turn.fauzanazz.com}
+      - --listening-ip=0.0.0.0
+      - --relay-ip=0.0.0.0
+      - --external-ip=${TURN_PUBLIC_IP}
       - --listening-port=3478
       - --min-port=50000
       - --max-port=50100
