@@ -71,6 +71,8 @@ services:
       - --no-tls
       - --no-dtls
       - --log-file=stdout
+      - --no-cli
+      - --pidfile=/var/tmp/turnserver.pid
 
 networks:
   dokploy-network:
