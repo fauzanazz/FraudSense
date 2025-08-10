@@ -22,8 +22,8 @@ services:
       - TURN_DOMAIN=${TURN_DOMAIN:-turn.fauzanazz.com}
       - TURN_PORT=${TURN_PORT:-3478}
       - TURN_TLS_PORT=${TURN_TLS_PORT:-5349}
-      - TURN_USER=${TURN_USER:-usermonyet}
-      - TURN_PASSWORD=${TURN_PASSWORD:-jasonjahja}
+      - TURN_SECRET=${TURN_SECRET:-myturnsecret123}
+      - TURN_REALM=${TURN_REALM:-turn.fauzanazz.com}
       - TURN_ENABLE_TLS=${TURN_ENABLE_TLS:-false}
       # Server port
       - PORT=3001
@@ -55,14 +55,14 @@ services:
       - "50000-50100:50000-50100/udp"
     environment:
       - TURN_REALM=${TURN_REALM:-turn.fauzanazz.com}
-      - TURN_USER=${TURN_USER:-usermonyet}
-      - TURN_PASSWORD=${TURN_PASSWORD:-turnpassword}
+      - TURN_SECRET=${TURN_SECRET:-myturnsecret123}
       - TURN_DOMAIN=${TURN_DOMAIN:-turn.fauzanazz.com}
     command:
       - -n
       - --lt-cred-mech
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_SECRET:-myturnsecret123}
       - --realm=${TURN_REALM:-turn.fauzanazz.com}
-      - --user=${TURN_USER:-usermonyet}:${TURN_PASSWORD:-turnpassword}
       - --server-name=${TURN_DOMAIN:-turn.fauzanazz.com}
       - --listening-port=3478
       - --min-port=50000
