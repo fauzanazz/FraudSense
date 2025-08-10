@@ -24,8 +24,7 @@ services:
       - TURN_TLS_PORT=${TURN_TLS_PORT:-5349}
       - TURN_SECRET=${TURN_SECRET:-myturnsecret123}
       - TURN_REALM=${TURN_REALM:-turn.fauzanazz.com}
-      - TURN_USER=${TURN_USER:-fraudsense}
-      - TURN_PASSWORD=${TURN_PASSWORD:-fraudsense123}
+      - TURN_ALLOW_STATIC_FALLBACK=false
       - TURN_ENABLE_TLS=${TURN_ENABLE_TLS:-false}
       # Server port
       - PORT=3001

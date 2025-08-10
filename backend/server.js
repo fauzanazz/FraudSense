@@ -201,24 +201,27 @@ io.on('connection', (socket) => {
           realm: turnRealm,
           ttlSeconds
         });
-      }
-
-      // Add static fallback if provided
-      if (staticUser && staticPassword) {
-        // Fallback to static long-term credentials
+        // Only add static fallback when explicitly allowed
+        const allowStaticFallback = process.env.TURN_ALLOW_STATIC_FALLBACK === '1' || process.env.TURN_ALLOW_STATIC_FALLBACK === 'true';
+        if (allowStaticFallback && staticUser && staticPassword) {
+          iceServers.push({
+            urls: turnUrls,
+            username: staticUser,
+            credential: staticPassword,
+            credentialType: 'password'
+          });
+          console.log('✅ TURN (static fallback) configured in addition to ephemeral');
+        }
+      } else if (staticUser && staticPassword) {
+        // No TURN_SECRET provided, use static credentials only
         iceServers.push({
           urls: turnUrls,
           username: staticUser,
           credential: staticPassword,
           credentialType: 'password'
         });
-        console.log('✅ TURN (static) configured', {
-          domain: turnDomain,
-          port: turnPort
-        });
-      }
-
-      if (!turnSecret && !(staticUser && staticPassword)) {
+        console.log('✅ TURN (static) configured', { domain: turnDomain, port: turnPort });
+      } else if (!turnSecret) {
         console.warn('⚠️ TURN credentials missing (TURN_SECRET or TURN_USER/PASSWORD). Using STUN only');
       }
     } else {
