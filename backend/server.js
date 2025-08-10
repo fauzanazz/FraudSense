@@ -3,6 +3,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -140,36 +141,86 @@ io.on('connection', (socket) => {
   });
 
   socket.on('get-turn-config', (callback) => {
-    const turnDomain = process.env.TURN_DOMAIN;
-    const turnPort = process.env.TURN_PORT || '3478';
-    const username = process.env.TURN_USER;
-    const credential = process.env.TURN_PASSWORD;
+    // Determine TURN host/port
+    let turnDomain = process.env.TURN_DOMAIN;
+    let turnPort = process.env.TURN_PORT || '3478';
+
+    // Support TURN_SERVER_URL env in formats like "turn.example.com:3478" or "turns://turn.example.com:5349"
+    const turnServerUrl = process.env.TURN_SERVER_URL;
+    if (!turnDomain && turnServerUrl) {
+      try {
+        const sanitized = turnServerUrl.replace(/^turns?:\/\//, '');
+        const [host, port] = sanitized.split(':');
+        if (host) turnDomain = host;
+        if (port) turnPort = port;
+      } catch (e) {
+        console.warn('⚠️ Failed to parse TURN_SERVER_URL, falling back to env TURN_DOMAIN/PORT');
+      }
+    }
 
     const iceServers = [
       { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
     ];
 
-    if (turnDomain && username && credential) {
-      const turnUrls = [`turn:${turnDomain}:${turnPort}?transport=udp`, `turn:${turnDomain}:${turnPort}?transport=tcp`];
-      
-      // Optionally include TLS TURN if enabled
+    // Prefer ephemeral credentials when TURN_SECRET is provided (coturn --use-auth-secret)
+    const turnSecret = process.env.TURN_SECRET;
+    const turnRealm = process.env.TURN_REALM; // optional, for logging/reference
+    const staticUser = process.env.TURN_USER;
+    const staticPassword = process.env.TURN_PASSWORD;
+
+    if (turnDomain) {
+      const turnUrls = [
+        `turn:${turnDomain}:${turnPort}?transport=udp`,
+        `turn:${turnDomain}:${turnPort}?transport=tcp`
+      ];
+
       if (process.env.TURN_ENABLE_TLS === '1' || process.env.TURN_ENABLE_TLS === 'true') {
         const tlsPort = process.env.TURN_TLS_PORT || '5349';
         turnUrls.push(`turns:${turnDomain}:${tlsPort}?transport=tcp`);
       }
-      
-      iceServers.push({
-        urls: turnUrls,
-        username,
-        credential,
-        credentialType: 'password'
-      });
-      console.log('✅ TURN server configured with authentication');
+
+      if (turnSecret) {
+        // Generate ephemeral credentials valid for 1 hour
+        const ttlSeconds = parseInt(process.env.TURN_TTL || '3600', 10);
+        const unixTime = Math.floor(Date.now() / 1000) + ttlSeconds;
+        const username = `${unixTime}:${socket.id}`; // bind to socket for traceability
+        const credential = crypto
+          .createHmac('sha1', turnSecret)
+          .update(username)
+          .digest('base64');
+
+        iceServers.push({
+          urls: turnUrls,
+          username,
+          credential,
+          credentialType: 'token'
+        });
+        console.log('✅ TURN (ephemeral) configured', {
+          domain: turnDomain,
+          port: turnPort,
+          realm: turnRealm,
+          ttlSeconds
+        });
+      } else if (staticUser && staticPassword) {
+        // Fallback to static long-term credentials
+        iceServers.push({
+          urls: turnUrls,
+          username: staticUser,
+          credential: staticPassword,
+          credentialType: 'password'
+        });
+        console.log('✅ TURN (static) configured', {
+          domain: turnDomain,
+          port: turnPort
+        });
+      } else {
+        console.warn('⚠️ TURN credentials missing (TURN_SECRET or TURN_USER/PASSWORD). Using STUN only');
+      }
     } else {
-      console.warn('⚠️ TURN env missing (TURN_DOMAIN/USER/PASSWORD). Falling back to STUN only');
+      console.warn('⚠️ TURN domain not set. Using STUN only');
     }
 
-    const turnConfig = { 
+    const turnConfig = {
       iceServers,
       iceCandidatePoolSize: 2,
       iceTransportPolicy: 'all',
