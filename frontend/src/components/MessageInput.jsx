@@ -1,13 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-function MessageInput({ onSendMessage }) {
+function MessageInput({ onSendMessage, socket, conversationId, userId }) {
   const [message, setMessage] = useState('');
+  const typingTimeoutRef = useRef(null);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (message.trim()) {
       onSendMessage(message.trim());
       setMessage('');
+      if (socket && conversationId) {
+        socket.emit('stopTyping', { conversationId, userId });
+      }
     }
   };
 
@@ -17,6 +21,26 @@ function MessageInput({ onSendMessage }) {
       handleSubmit(e);
     }
   };
+
+  // Typing indicator emit with debounce
+  useEffect(() => {
+    if (!socket || !conversationId) return;
+    if (message.trim().length > 0) {
+      socket.emit('typing', { conversationId, userId });
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        socket.emit('stopTyping', { conversationId, userId });
+      }, 1500);
+    } else {
+      socket.emit('stopTyping', { conversationId, userId });
+    }
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+    };
+  }, [message, socket, conversationId, userId]);
 
   return (
     <div className="p-4 bg-neutral-900 border-t border-neutral-800">

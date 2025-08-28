@@ -11,6 +11,8 @@ function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
   const [simulatedFraudScore, setSimulatedFraudScore] = useState(0);
   const [shownFraudThresholds, setShownFraudThresholds] = useState(new Set());
   const [activeFraudWarning, setActiveFraudWarning] = useState(null);
+  const [typingUsers, setTypingUsers] = useState([]);
+  const [isAtBottom, setIsAtBottom] = useState(true);
 
   useEffect(() => {
     if (conversation) {
@@ -21,11 +23,21 @@ function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
 
   useEffect(() => {
     socket.on('receiveMessage', handleReceiveMessage);
+    socket.on('typing', ({ userId: typingUserId }) => {
+      if (typingUserId && typingUserId !== user._id) {
+        setTypingUsers(prev => (prev.includes(typingUserId) ? prev : [...prev, typingUserId]));
+      }
+    });
+    socket.on('stopTyping', ({ userId: typingUserId }) => {
+      setTypingUsers(prev => prev.filter(id => id !== typingUserId));
+    });
     socket.on('fraud-alert', handleFraudAlert);
     socket.on('fraud-analysis-result', handleFraudAnalysisResult);
     
     return () => {
       socket.off('receiveMessage');
+      socket.off('typing');
+      socket.off('stopTyping');
       socket.off('fraud-alert');
       socket.off('fraud-analysis-result');
     };
@@ -194,12 +206,31 @@ function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
         </div>
       )}
       
-      <div className="flex-1 overflow-y-auto p-4 bg-neutral-900">
-        <MessageList messages={messages} currentUserId={user._id} />
+      <div
+        className="flex-1 overflow-y-auto p-4 bg-neutral-900"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+          setIsAtBottom(nearBottom);
+        }}
+      >
+        <MessageList messages={messages} currentUserId={user._id} typingUsers={typingUsers} />
         <div ref={messagesEndRef} />
       </div>
+
+      {!isAtBottom && (
+        <button
+          className="absolute bottom-24 right-6 z-10 px-3 py-2 rounded-full bg-neutral-800 border border-neutral-700 text-neutral-200 hover:bg-neutral-700 cursor-pointer shadow"
+          onClick={() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            setIsAtBottom(true);
+          }}
+        >
+          ↓ New messages
+        </button>
+      )}
       
-      <MessageInput onSendMessage={handleSendMessage} />
+      <MessageInput onSendMessage={handleSendMessage} socket={socket} conversationId={conversation._id} userId={user._id} />
     </div>
   );
 }
