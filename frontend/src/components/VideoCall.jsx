@@ -735,35 +735,35 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
   };
 
   return (
-    <div className="video-call-overlay">
-      <div className="video-call-container">
-        <div className="video-call-header">
-          <h3>
+    <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[1000]">
+      <div className="w-[90%] max-w-[800px] h-[80%] bg-neutral-900 rounded-[10px] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between p-4 bg-neutral-800 text-white rounded-t-[10px]">
+          <h3 className="m-0 text-[1.2rem]">
             {callData.type === 'outgoing' ? 'Calling...' : `Call from ${callData.from}`}
           </h3>
-          <button onClick={endCall} className="close-btn">×</button>
+          <button onClick={endCall} className="bg-transparent border-0 text-white text-[1.5rem] cursor-pointer p-0 w-[30px] h-[30px] flex items-center justify-center hover:bg-white/10 rounded-full">×</button>
         </div>
         
-        <div className="video-container">
-          <div className="video-grid">
+        <div className="flex-1 bg-black">
+          <div className="flex-1 grid grid-cols-2 gap-[10px] p-5">
             {localStream && (
-              <div className="video-wrapper">
+              <div className="relative bg-[#333] rounded-[8px] overflow-hidden">
                 <video
                   ref={localVideoRef}
                   autoPlay
                   playsInline
                   muted
-                  className="my-video"
+                  className="transform -scale-x-100 w-full h-full object-cover"
                   onLoadedMetadata={() => console.log('📺 Local video metadata loaded')}
                   onCanPlay={() => console.log('📺 Local video can play')}
                 />
-                <span className="video-label">
+                <span className="absolute bottom-[10px] left-[10px] text-white bg-black/70 px-2 py-1 rounded text-[0.8rem]">
                   You
-                  <div className="audio-level">
+                  <div className="text-[0.7rem] mt-1">
                     🎤 {localAudioLevel}%
-                    <div className="level-bar">
+                    <div className="w-[60px] h-[4px] bg-white/30 rounded mt-[2px] overflow-hidden">
                       <div 
-                        className="level-fill" 
+                        className="h-full bg-gradient-to-r from-[#28a745] via-[#ffc107] to-[#dc3545] transition-[width] duration-100 ease-linear" 
                         style={{width: `${Math.min(localAudioLevel, 100)}%`}}
                       ></div>
                     </div>
@@ -773,22 +773,22 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
             )}
             
             {callAccepted && remoteStream && (
-              <div className="video-wrapper">
+              <div className="relative bg-[#333] rounded-[8px] overflow-hidden">
                 <video
                   ref={remoteVideoRef}
                   autoPlay
                   playsInline
-                  className="user-video"
+                  className="w-full h-full object-cover"
                   onLoadedMetadata={() => console.log('📺 Remote video metadata loaded')}
                   onCanPlay={() => console.log('📺 Remote video can play')}
                 />
-                <span className="video-label">
+                <span className="absolute bottom-[10px] left-[10px] text-white bg-black/70 px-2 py-1 rounded text-[0.8rem]">
                   {callData.type === 'outgoing' ? 'Remote User' : callData.from}
-                  <div className="audio-level">
+                  <div className="text-[0.7rem] mt-1">
                     🔊 {remoteAudioLevel}%
-                    <div className="level-bar">
+                    <div className="w-[60px] h-[4px] bg-white/30 rounded mt-[2px] overflow-hidden">
                       <div 
-                        className="level-fill" 
+                        className="h-full bg-gradient-to-r from-[#28a745] via-[#ffc107] to-[#dc3545] transition-[width] duration-100 ease-linear" 
                         style={{width: `${Math.min(remoteAudioLevel, 100)}%`}}
                       ></div>
                     </div>
@@ -799,22 +799,23 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
           </div>
           
           {/* Debug info */}
-          <div className="debug-info">
-            <p>Local stream tracks: {localStream?.getTracks().length || 0}</p>
-            <p>Remote stream tracks: {remoteStream?.getTracks().length || 0}</p>
-            <p>Video enabled: {isVideoEnabled ? '✅' : '❌'}</p>
-            <p>Audio enabled: {isAudioEnabled ? '✅' : '❌'}</p>
+          <div className="bg-black/70 text-white p-2 text-[0.8rem] absolute top-[10px] right-[10px] rounded min-w-[200px]">
+            <p className="m-0">Local stream tracks: {localStream?.getTracks().length || 0}</p>
+            <p className="m-0">Remote stream tracks: {remoteStream?.getTracks().length || 0}</p>
+            <p className="m-0">Video enabled: {isVideoEnabled ? '✅' : '❌'}</p>
+            <p className="m-0">Audio enabled: {isAudioEnabled ? '✅' : '❌'}</p>
           </div>
         </div>
 
-        <div className="call-controls">
+        <div className="p-5 flex justify-center">
           {/* Audio Format Selection */}
-          <div className="audio-format-selector">
-            <label>Audio Format:</label>
+          <div className="flex items-center gap-2 my-2 p-2 bg-neutral-800 rounded border border-neutral-700">
+            <label className="text-[0.85rem] text-neutral-300 m-0">Audio Format:</label>
             <select 
               value={audioFormat} 
               onChange={(e) => setAudioFormat(e.target.value)}
               disabled={isRecording}
+              className="px-2 py-1 border border-neutral-600 rounded text-[0.85rem] bg-neutral-900 text-neutral-100"
             >
               <option value="webm">WebM</option>
               <option value="wav">WAV</option>
@@ -822,7 +823,7 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
             </select>
             <button 
               onClick={isRecording ? stopAudioRecording : startAudioRecording}
-              className={`control-btn ${isRecording ? 'disabled' : ''}`}
+              className={`px-4 py-2 bg-[#6c757d] text-white rounded ${isRecording ? 'bg-[#dc3545] opacity-70' : ''}`}
               title="Toggle fraud detection recording"
             >
               {isRecording ? '🔴 Recording' : '⭕ Record'}
@@ -830,34 +831,34 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
           </div>
 
           {!callAccepted && callData.type === 'outgoing' && (
-            <div className="connecting">
-              <p>Connecting...</p>
+            <div className="text-center text-neutral-200">
+              <p className="m-0">Connecting...</p>
             </div>
           )}
 
           {callAccepted && (
-            <div className="call-actions">
+            <div className="flex gap-4 justify-center items-center">
               <button 
                 onClick={toggleVideo} 
-                className={`control-btn ${!isVideoEnabled ? 'disabled' : ''}`}
+                className={`px-4 py-2 bg-[#6c757d] text-white rounded ${!isVideoEnabled ? 'bg-[#dc3545] opacity-70' : ''}`}
               >
                 {isVideoEnabled ? '📹' : '📹̶'} Video
               </button>
               <button 
                 onClick={toggleAudio} 
-                className={`control-btn ${!isAudioEnabled ? 'disabled' : ''}`}
+                className={`px-4 py-2 bg-[#6c757d] text-white rounded ${!isAudioEnabled ? 'bg-[#dc3545] opacity-70' : ''}`}
               >
                 {isAudioEnabled ? '🎤' : '🎤̶'} Audio
               </button>
-              <button onClick={endCall} className="call-btn end-call">
+              <button onClick={endCall} className="px-4 py-2 bg-[#dc3545] text-white rounded">
                 End Call
               </button>
             </div>
           )}
 
           {!callAccepted && callData.type === 'incoming' && (
-            <div className="call-actions">
-              <button onClick={endCall} className="call-btn end-call">
+            <div className="flex gap-4 justify-center items-center">
+              <button onClick={endCall} className="px-4 py-2 bg-[#dc3545] text-white rounded">
                 End Call
               </button>
             </div>

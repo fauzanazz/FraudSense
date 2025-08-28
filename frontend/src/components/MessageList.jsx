@@ -7,7 +7,7 @@ function MessageList({ messages, currentUserId }) {
   };
 
   return (
-    <div className="message-list">
+    <div className="flex flex-col gap-2">
       {messages.map((message, index) => {
         const isOwn = message.senderId === currentUserId || message.senderId._id === currentUserId;
         const senderName = message.senderId?.username || message.senderName || 'Unknown';
@@ -15,13 +15,13 @@ function MessageList({ messages, currentUserId }) {
         return (
           <div
             key={message._id || index}
-            className={`message ${isOwn ? 'message-own' : 'message-other'}`}
+            className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
           >
-            <div className="message-content">
-              <div className="message-text">{message.content}</div>
-              <div className="message-meta">
-                <span className="message-sender">{isOwn ? 'You' : senderName}</span>
-                <span className="message-time">{formatTime(message.timestamp)}</span>
+            <div className={`${isOwn ? 'bg-indigo-600 text-white rounded-tr-[4px]' : 'bg-neutral-800 text-neutral-200 border border-neutral-700 rounded-tl-[4px]'} max-w-[70%] p-3 rounded-[10px] break-words`}>
+              <div className="mb-1">{message.content}</div>
+              <div className="flex justify-between text-[0.7rem] opacity-70">
+                <span>{isOwn ? 'You' : senderName}</span>
+                <span>{formatTime(message.timestamp)}</span>
               </div>
             </div>
           </div>
