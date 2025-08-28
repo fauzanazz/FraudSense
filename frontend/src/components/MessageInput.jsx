@@ -30,7 +30,7 @@ function MessageInput({ onSendMessage }) {
             rows="1"
             className="flex-1 p-3 bg-neutral-800 text-neutral-100 placeholder:text-neutral-500 border border-neutral-700 rounded-[20px] resize-none font-inherit text-base focus:outline-none focus:border-indigo-500"
           />
-          <button type="submit" disabled={!message.trim()} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-[20px] disabled:bg-neutral-700 disabled:text-neutral-400 disabled:cursor-not-allowed">
+          <button type="submit" disabled={!message.trim()} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-[20px] disabled:bg-neutral-700 disabled:text-neutral-400 disabled:cursor-not-allowed cursor-pointer">
             Send
           </button>
         </div>

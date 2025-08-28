@@ -9,6 +9,8 @@ function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
   const [fraudAnalysisResults, setFraudAnalysisResults] = useState([]);
   const messagesEndRef = useRef(null);
   const [simulatedFraudScore, setSimulatedFraudScore] = useState(0);
+  const [shownFraudThresholds, setShownFraudThresholds] = useState(new Set());
+  const [activeFraudWarning, setActiveFraudWarning] = useState(null);
 
   useEffect(() => {
     if (conversation) {
@@ -48,6 +50,23 @@ function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
     setSimulatedFraudScore(Math.round(Math.random() * 100));
     return () => clearInterval(interval);
   }, [fraudAlerts.length]);
+
+  // Trigger warning modal when passing configured thresholds
+  useEffect(() => {
+    const thresholds = [50, 75, 80, 90];
+    for (const t of thresholds) {
+      if (simulatedFraudScore >= t && !shownFraudThresholds.has(t)) {
+        setActiveFraudWarning(t);
+        break;
+      }
+    }
+  }, [simulatedFraudScore, shownFraudThresholds]);
+
+  const dismissFraudWarning = () => {
+    if (activeFraudWarning == null) return;
+    setShownFraudThresholds(prev => new Set(prev).add(activeFraudWarning));
+    setActiveFraudWarning(null);
+  };
 
   const fetchMessages = async () => {
     try {
@@ -114,13 +133,14 @@ function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
   const otherUser = getOtherParticipant();
 
   return (
-    <div className="flex-1 flex flex-col bg-neutral-900">
+    <div className="flex-1 flex flex-col bg-neutral-900 min-h-0">
       <div className="flex items-center justify-between p-4 border-b border-neutral-800 bg-neutral-900">
-        <div>
-          <h3 className="m-0 text-neutral-100">{otherUser?.username || 'Unknown User'}</h3>
+        <div className="flex items-center gap-2 min-w-0">
+          <h3 className="m-0 text-neutral-100 truncate">{otherUser?.username || 'Unknown User'}</h3>
+          <span className="text-xs px-2 py-1 rounded-full bg-amber-500/10 text-amber-300 whitespace-nowrap">Do not share passwords, PIN, OTP, or sensitive info</span>
         </div>
         <div>
-          <button className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded" onClick={() => onStartCall(otherUser._id)}>
+          <button className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded cursor-pointer" onClick={() => onStartCall(otherUser._id)}>
             📞 Call
           </button>
         </div>
@@ -138,6 +158,18 @@ function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
         </div>
       </div>
 
+      {/* Fraud Warning Modal */}
+      {activeFraudWarning != null && (
+        <div className="fixed inset-0 bg-black/80 z-[2000] flex items-center justify-center">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 w-[90%] max-w-md text-center shadow-2xl">
+            <div className="text-sm text-neutral-400 mb-2">Warning</div>
+            <div className="text-2xl font-semibold mb-3 text-red-300">{simulatedFraudScore}% likely fraud</div>
+            <p className="text-neutral-300 mb-6">Our system detected patterns often associated with scam conversations. Proceed with caution.</p>
+            <button onClick={dismissFraudWarning} className="px-5 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white cursor-pointer">Understood</button>
+          </div>
+        </div>
+      )}
+
       {/* Fraud Alerts */}
       {fraudAlerts.length > 0 && (
         <div className="bg-amber-100/5 border border-amber-400/20 m-0 p-0">
@@ -151,7 +183,7 @@ function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
                   <small className="text-neutral-400 text-[0.75rem] block mt-1">Score: {alert.fraudScore}, Confidence: {(alert.confidence * 100).toFixed(1)}%</small>
                 </div>
                 <button 
-                  className="text-neutral-400 text-[1.2rem] w-5 h-5 shrink-0 flex items-center justify-center rounded-full hover:bg-white/10 hover:text-red-400"
+                  className="text-neutral-400 text-[1.2rem] w-5 h-5 shrink-0 flex items-center justify-center rounded-full hover:bg-white/10 hover:text-red-400 cursor-pointer"
                   onClick={() => dismissAlert(alert.timestamp)}
                 >
                   ×

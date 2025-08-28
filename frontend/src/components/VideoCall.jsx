@@ -823,7 +823,7 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
             </select>
             <button 
               onClick={isRecording ? stopAudioRecording : startAudioRecording}
-              className={`px-4 py-2 bg-[#6c757d] text-white rounded ${isRecording ? 'bg-[#dc3545] opacity-70' : ''}`}
+              className={`px-4 py-2 bg-[#6c757d] text-white rounded ${isRecording ? 'bg-[#dc3545] opacity-70' : ''} cursor-pointer`}
               title="Toggle fraud detection recording"
             >
               {isRecording ? '🔴 Recording' : '⭕ Record'}
@@ -840,17 +840,17 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
             <div className="flex gap-4 justify-center items-center">
               <button 
                 onClick={toggleVideo} 
-                className={`px-4 py-2 bg-[#6c757d] text-white rounded ${!isVideoEnabled ? 'bg-[#dc3545] opacity-70' : ''}`}
+                className={`px-4 py-2 bg-[#6c757d] text-white rounded ${!isVideoEnabled ? 'bg-[#dc3545] opacity-70' : ''} cursor-pointer`}
               >
                 {isVideoEnabled ? '📹' : '📹̶'} Video
               </button>
               <button 
                 onClick={toggleAudio} 
-                className={`px-4 py-2 bg-[#6c757d] text-white rounded ${!isAudioEnabled ? 'bg-[#dc3545] opacity-70' : ''}`}
+                className={`px-4 py-2 bg-[#6c757d] text-white rounded ${!isAudioEnabled ? 'bg-[#dc3545] opacity-70' : ''} cursor-pointer`}
               >
                 {isAudioEnabled ? '🎤' : '🎤̶'} Audio
               </button>
-              <button onClick={endCall} className="px-4 py-2 bg-[#dc3545] text-white rounded">
+              <button onClick={endCall} className="px-4 py-2 bg-[#dc3545] text-white rounded cursor-pointer">
                 End Call
               </button>
             </div>
@@ -858,7 +858,7 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
 
           {!callAccepted && callData.type === 'incoming' && (
             <div className="flex gap-4 justify-center items-center">
-              <button onClick={endCall} className="px-4 py-2 bg-[#dc3545] text-white rounded">
+              <button onClick={endCall} className="px-4 py-2 bg-[#dc3545] text-white rounded cursor-pointer">
                 End Call
               </button>
             </div>

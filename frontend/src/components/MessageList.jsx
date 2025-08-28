@@ -19,7 +19,7 @@ function MessageList({ messages, currentUserId }) {
           >
             <div className={`${isOwn ? 'bg-indigo-600 text-white rounded-tr-[4px]' : 'bg-neutral-800 text-neutral-200 border border-neutral-700 rounded-tl-[4px]'} max-w-[70%] p-3 rounded-[10px] break-words`}>
               <div className="mb-1">{message.content}</div>
-              <div className="flex justify-between text-[0.7rem] opacity-70">
+              <div className="flex justify-between text-[0.7rem] opacity-70 space-x-2">
                 <span>{isOwn ? 'You' : senderName}</span>
                 <span>{formatTime(message.timestamp)}</span>
               </div>

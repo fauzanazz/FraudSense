@@ -21,7 +21,7 @@ function ConversationList({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4">
+    <div className="flex-1 overflow-y-auto p-4 min-h-0">
       <h4 className="m-0 mb-4 text-neutral-400 text-sm uppercase tracking-wide">Conversations</h4>
       <div>
         {conversations.map(conversation => {
@@ -57,7 +57,7 @@ function ConversationList({
             onClick={() => onCreateConversation(user._id)}
           >
             <span>{user.username}</span>
-            <button className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-sm">Chat</button>
+            <button className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-sm cursor-pointer">Chat</button>
           </div>
         ))}
       </div>

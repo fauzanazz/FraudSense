@@ -143,8 +143,8 @@ function ChatLayout({ user, socket, users }) {
   };
 
   return (
-    <div className="flex h-screen bg-neutral-900 text-neutral-200">
-      <div className="w-[300px] bg-neutral-900 border-r border-neutral-800 flex flex-col">
+    <div className="flex h-screen overflow-hidden bg-neutral-900 text-neutral-200">
+      <div className="w-[300px] bg-neutral-900 border-r border-neutral-800 flex flex-col min-h-0">
         <div className="p-4 border-b border-neutral-800 bg-neutral-800 text-neutral-100">
           <h3 className="m-0 text-[1.1rem] font-medium">Welcome, {user.username}!</h3>
         </div>
@@ -157,7 +157,7 @@ function ChatLayout({ user, socket, users }) {
           currentUserId={user._id}
         />
       </div>
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-h-0">
         {activeConversation ? (
           <ChatWindow
             conversation={activeConversation}
