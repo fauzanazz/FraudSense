@@ -51,7 +51,7 @@ function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
   useEffect(() => {
     const interval = setInterval(() => {
       setSimulatedFraudScore(() => {
-        const base = Math.random() * 100;
+        const base = Math.random() * 1;
         // Nudge score up a bit if there are recent fraud alerts
         const hasRecentAlert = fraudAlerts.length > 0;
         const adjusted = Math.min(100, Math.max(0, base + (hasRecentAlert ? 15 : 0)));

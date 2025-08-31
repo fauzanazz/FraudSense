@@ -4,6 +4,7 @@ import Prism from './Prism.jsx';
 function Login({ onLogin, users }) {
   const [selectedUser, setSelectedUser] = useState('');
   const [newUsername, setNewUsername] = useState('');
+  const [password, setPassword] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -73,6 +74,17 @@ function Login({ onLogin, users }) {
               onChange={(e) => setNewUsername(e.target.value)}
               placeholder="Enter username"
               disabled={!!selectedUser}
+              className='p-2 border-[1px] border-white rounded-lg w-full'
+            />
+          </div>
+
+          <div className='flex flex-col items-start gap-y-2 w-full'>
+            <label className='font-bold'>Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter password"
               className='p-2 border-[1px] border-white rounded-lg w-full'
             />
           </div>

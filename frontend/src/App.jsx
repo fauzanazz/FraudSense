@@ -1,8 +1,15 @@
 import { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import io from 'socket.io-client';
 import axios from 'axios';
-import ChatLayout from './components/ChatLayout';
+import ChatPage from './pages/ChatPage';
 import Login from './components/Login';
+import AdminPage from './pages/AdminPage';
+import UserPage from './pages/UserPage';
+import APIKeysPage from './pages/APIKeysPage';
+import MonitoringPage from './pages/MonitoringPage';
+import BillingPage from './pages/BillingPage';
+import DocsPage from './pages/DocsPage';
 import './App.css';
 
 const socket = io(import.meta.env.VITE_API_BASE_URL);
@@ -34,14 +41,45 @@ function App() {
     }
   };
 
-  if (!user) {
-    return <Login onLogin={handleLogin} users={users} />;
-  }
-
   return (
-    <div className="App">
-      <ChatLayout user={user} socket={socket} users={users} />
-    </div>
+    <Router>
+      <div className="App">
+        <Routes>
+          {/* Public routes - no login required */}
+          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/users" element={<UserPage />} />
+          <Route path="/api-keys" element={<APIKeysPage />} />
+          <Route path="/monitoring" element={<MonitoringPage />} />
+          <Route path="/billing" element={<BillingPage />} />
+          <Route path="/docs" element={<DocsPage />} />
+          
+          {/* Protected routes - require login */}
+          <Route 
+            path="/chat" 
+            element={
+              user ? (
+                <ChatPage user={user} socket={socket} users={users} />
+              ) : (
+                <Login onLogin={handleLogin} users={users} />
+              )
+            } 
+          />
+          
+          {/* Default route */}
+          <Route 
+            path="/" 
+            element={
+              user ? (
+                <Navigate to="/chat" replace />
+              ) : (
+                <Login onLogin={handleLogin} users={users} />
+              )
+            } 
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
+    </Router>
   );
 }
 
