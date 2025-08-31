@@ -143,10 +143,10 @@ function ChatLayout({ user, socket, users }) {
   };
 
   return (
-    <div className="chat-layout">
-      <div className="sidebar">
-        <div className="user-info">
-          <h3>Welcome, {user.username}!</h3>
+    <div className="flex h-screen overflow-hidden bg-neutral-900 text-neutral-200">
+      <div className="w-[300px] bg-neutral-900 border-r border-neutral-800 flex flex-col min-h-0">
+        <div className="p-4 border-b border-neutral-800 bg-neutral-800 text-neutral-100">
+          <h3 className="m-0 text-[1.1rem] font-medium">Welcome, {user.username}!</h3>
         </div>
         <ConversationList
           conversations={conversations}
@@ -157,7 +157,7 @@ function ChatLayout({ user, socket, users }) {
           currentUserId={user._id}
         />
       </div>
-      <div className="main-content">
+      <div className="flex-1 flex flex-col min-h-0">
         {activeConversation ? (
           <ChatWindow
             conversation={activeConversation}
@@ -167,8 +167,8 @@ function ChatLayout({ user, socket, users }) {
             users={users}
           />
         ) : (
-          <div className="no-conversation">
-            <p>Select a conversation or create a new one</p>
+          <div className="flex-1 flex items-center justify-center text-neutral-400 text-[1.1rem]">
+            <p className="m-0">Select a conversation or create a new one</p>
           </div>
         )}
       </div>
@@ -182,15 +182,15 @@ function ChatLayout({ user, socket, users }) {
         />
       )}
       {incomingCall && (
-        <div className="incoming-call-overlay">
-          <div className="incoming-call-modal">
-            <h3>Incoming Call</h3>
-            <p>Someone is calling you...</p>
-            <div className="call-actions">
-              <button className="accept-btn" onClick={acceptCall}>
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[2000]">
+          <div className="bg-white p-8 rounded-2xl shadow-2xl text-center min-w-[300px]">
+            <h3 className="m-0 mb-4 text-[#333] text-[1.5rem]">Incoming Call</h3>
+            <p className="m-0 mb-8 text-[#666]">Someone is calling you...</p>
+            <div className="flex gap-4 justify-center items-center">
+              <button className="px-6 py-3 bg-[#28a745] text-white rounded-full text-[1rem] font-medium min-w-[100px]" onClick={acceptCall}>
                 Accept
               </button>
-              <button className="reject-btn" onClick={rejectCall}>
+              <button className="px-6 py-3 bg-[#dc3545] text-white rounded-full text-[1rem] font-medium min-w-[100px]" onClick={rejectCall}>
                 Reject
               </button>
             </div>
