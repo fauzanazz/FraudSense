@@ -204,8 +204,8 @@ export default function BillingPage() {
   }
 
   return (
-    <div className="bg-black h-screen w-screen relative font-['Plus_Jakarta_Sans']">
-      <div className="mx-auto w-full max-w-7xl p-4 md:p-6 space-y-6">
+    <div className="w-full min-h-screen p-4 md:p-6">
+      <div className="mx-auto w-full max-w-7xl space-y-6">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">Billing & Usage</h1>
           <p className="text-white/70">Manage your subscription and view billing history</p>
@@ -359,12 +359,6 @@ export default function BillingPage() {
             </CardContent>
           </Card>
         </div>
-      </div>
-
-      {/* Background effect similar to other pages */}
-      <div className="absolute inset-0 pointer-events-none opacity-20">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full blur-3xl"></div>
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ import APIKeysPage from './pages/APIKeysPage';
 import MonitoringPage from './pages/MonitoringPage';
 import BillingPage from './pages/BillingPage';
 import DocsPage from './pages/DocsPage';
+import { AdminLayout } from './components/AdminLayout';
 import './App.css';
 
 const socket = io(import.meta.env.VITE_API_BASE_URL);
@@ -43,17 +44,15 @@ function App() {
 
   return (
     <Router>
-      <div className="App">
-        <Routes>
-          {/* Public routes - no login required */}
-          <Route path="/admin" element={<AdminPage />} />
-          <Route path="/users" element={<UserPage />} />
-          <Route path="/api-keys" element={<APIKeysPage />} />
-          <Route path="/monitoring" element={<MonitoringPage />} />
-          <Route path="/billing" element={<BillingPage />} />
-          <Route path="/docs" element={<DocsPage />} />
+              <div className="App">
+          <Routes>
+            <Route path="/admin" element={<AdminLayout><AdminPage /></AdminLayout>} />
+            <Route path="/admin/users" element={<AdminLayout><UserPage /></AdminLayout>} />
+            <Route path="/admin/api-keys" element={<AdminLayout><APIKeysPage /></AdminLayout>} />
+            <Route path="/admin/monitoring" element={<AdminLayout><MonitoringPage /></AdminLayout>} />
+            <Route path="/admin/billing" element={<AdminLayout><BillingPage /></AdminLayout>} />
+            <Route path="/admin/docs" element={<AdminLayout><DocsPage /></AdminLayout>} />
           
-          {/* Protected routes - require login */}
           <Route 
             path="/chat" 
             element={
@@ -65,7 +64,6 @@ function App() {
             } 
           />
           
-          {/* Default route */}
           <Route 
             path="/" 
             element={
