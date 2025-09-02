@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Prism from './Prism.jsx';
 
 function Login({ onLogin, users }) {
   const [selectedUser, setSelectedUser] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [password, setPassword] = useState('');
+  const navigate = useNavigate();
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -93,6 +95,23 @@ function Login({ onLogin, users }) {
             Login
           </button>
         </form>
+        <button
+          type="button"
+          onClick={() => navigate('/admin')}
+          className='group max-w-xs p-2 rounded-lg w-full bg-[#1C1C1C]/80 text-white cursor-pointer font-medium flex items-center justify-center gap-x-2 transition-transform duration-200'
+        >
+          <span className='inline-flex h-5 w-5 items-center justify-center'>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              className='h-5 w-5 transition-transform duration-200 group-hover:rotate-6'
+            >
+              <path d="M12 2.25c-.41 0-.82.09-1.2.27l-6 2.67A2.25 2.25 0 003 7.27v4.23c0 5.23 3.4 9.98 8.4 11.52.38.12.82.12 1.2 0 5-1.54 8.4-6.29 8.4-11.52V7.27c0-.9-.54-1.7-1.33-2.08l-6-2.67c-.38-.18-.79-.27-1.2-.27zM8.25 12a3.75 3.75 0 117.5 0 3.75 3.75 0 01-7.5 0z" />
+            </svg>
+          </span>
+          Admin Dashboard
+        </button>
       </div>
 
       <div className='absolute inset-0 pointer-events-none'>

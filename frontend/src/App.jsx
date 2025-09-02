@@ -44,15 +44,15 @@ function App() {
 
   return (
     <Router>
-              <div className="App">
-          <Routes>
-            <Route path="/admin" element={<AdminLayout><AdminPage /></AdminLayout>} />
-            <Route path="/admin/users" element={<AdminLayout><UserPage /></AdminLayout>} />
-            <Route path="/admin/api-keys" element={<AdminLayout><APIKeysPage /></AdminLayout>} />
-            <Route path="/admin/monitoring" element={<AdminLayout><MonitoringPage /></AdminLayout>} />
-            <Route path="/admin/billing" element={<AdminLayout><BillingPage /></AdminLayout>} />
-            <Route path="/admin/docs" element={<AdminLayout><DocsPage /></AdminLayout>} />
-          
+      <div className="App">
+        <Routes>
+          <Route path="/admin" element={<AdminLayout><AdminPage /></AdminLayout>} />
+          <Route path="/admin/users" element={<AdminLayout><UserPage /></AdminLayout>} />
+          <Route path="/admin/api-keys" element={<AdminLayout><APIKeysPage /></AdminLayout>} />
+          <Route path="/admin/monitoring" element={<AdminLayout><MonitoringPage /></AdminLayout>} />
+          <Route path="/admin/billing" element={<AdminLayout><BillingPage /></AdminLayout>} />
+          <Route path="/admin/docs" element={<AdminLayout><DocsPage /></AdminLayout>} />
+        
           <Route 
             path="/chat" 
             element={
