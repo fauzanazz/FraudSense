@@ -8,7 +8,7 @@ function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
   const [fraudAlerts, setFraudAlerts] = useState([]);
   const [fraudAnalysisResults, setFraudAnalysisResults] = useState([]);
   const messagesEndRef = useRef(null);
-  const [simulatedFraudScore, setSimulatedFraudScore] = useState(0);
+  const [simulatedFraudScore, setSimulatedFraudScore] = useState(55);
   const [shownFraudThresholds, setShownFraudThresholds] = useState(new Set());
   const [activeFraudWarning, setActiveFraudWarning] = useState(null);
   const [typingUsers, setTypingUsers] = useState([]);
@@ -47,21 +47,10 @@ function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
     scrollToBottom();
   }, [messages]);
 
-  // Simple simulation: update fraud score every 5s (random, stabilized)
+  // Set static fraud score to 55%
   useEffect(() => {
-    const interval = setInterval(() => {
-      setSimulatedFraudScore(() => {
-        const base = Math.random() * 1;
-        // Nudge score up a bit if there are recent fraud alerts
-        const hasRecentAlert = fraudAlerts.length > 0;
-        const adjusted = Math.min(100, Math.max(0, base + (hasRecentAlert ? 15 : 0)));
-        return Math.round(adjusted);
-      });
-    }, 5000);
-    // Initialize immediately
-    setSimulatedFraudScore(Math.round(Math.random() * 100));
-    return () => clearInterval(interval);
-  }, [fraudAlerts.length]);
+    setSimulatedFraudScore(55);
+  }, []);
 
   // Trigger warning modal when passing configured thresholds
   useEffect(() => {
