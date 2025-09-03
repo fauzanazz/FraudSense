@@ -1,126 +1,110 @@
+// models/FraudAnalysis.js
 const mongoose = require('mongoose');
+const { Schema, Types } = mongoose;
 
-const fraudAnalysisSchema = new mongoose.Schema({
-  conversationId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Conversation',
-    required: true
+const FraudAnalysisSchema = new Schema(
+  {
+    // Relasi ke chat (opsional — hanya jika ada conversation)
+    conversationId: { type: Schema.Types.ObjectId, ref: 'Conversation' },
+
+    // Fallback ID untuk sesi panggilan (audio call) saat tidak ada conversationId
+    callSessionId: { type: String, trim: true },
+
+    // Siapa user yang terkait analisis ini
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+
+    // Jenis analisis
+    analysisType: { type: String, enum: ['text', 'audio'], required: true },
+
+    // Skor legacy agar kompatibel dengan UI lama:
+    //  - text: 2=fraud, 1=normal
+    //  - audio: 1=fraud, 0=normal
+    fraudScore: { type: Number, required: true },
+
+    // Confidence dari model (0..1), opsi
+    confidence: { type: Number, min: 0, max: 1 },
+
+    // Data input tambahan (ringkasan, metadata audio, dll.)
+    inputData: Schema.Types.Mixed,
+
+    // Respons mentah dari model (string JSON)
+    modelResponse: { type: String },
+
+    // Waktu pemrosesan model (ms)
+    processingTime: { type: Number },
+
+    // Khusus audio streaming
+    audioChunkIndex: { type: Number },
+    audioFormat: {
+      type: String,
+      enum: ['wav', 'flac', 'opus', 'webm', 'ogg', 'mp3', 'aac', 'm4a'], // izinkan format umum
+    },
+
+    // Flag alert
+    alertTriggered: { type: Boolean, default: false },
+
+    // Timestamp catatan ini dibuat
+    timestamp: { type: Date, default: Date.now },
   },
-  analysisType: {
-    type: String,
-    enum: ['text', 'audio'],
-    required: true
-  },
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  fraudScore: {
-    type: Number,
-    required: true,
-    // Text: 1 (normal) or 2 (scam)
-    // Audio: 0 (normal) or 1 (fraud)
-    validate: {
-      validator: function(value) {
-        if (this.analysisType === 'text') {
-          return value === 1 || value === 2;
-        }
-        if (this.analysisType === 'audio') {
-          return value === 0 || value === 1;
-        }
-        return false;
-      },
-      message: 'Invalid fraud score for analysis type'
-    }
-  },
-  confidence: {
-    type: Number,
-    min: 0,
-    max: 1,
-    default: 0
-  },
-  inputData: {
-    // Store chat history for text analysis or audio metadata for audio analysis
-    type: mongoose.Schema.Types.Mixed,
-    required: false
-  },
-  modelResponse: {
-    // Store full model response for debugging
-    type: mongoose.Schema.Types.Mixed,
-    required: false
-  },
-  alertTriggered: {
-    type: Boolean,
-    default: false
-  },
-  alertTimestamp: {
-    type: Date,
-    default: null
-  },
-  processingTime: {
-    type: Number, // in milliseconds
-    default: 0
-  },
-  audioChunkIndex: {
-    type: Number,
-    required: function() { return this.analysisType === 'audio'; },
-    default: null
-  },
-  audioFormat: {
-    type: String,
-    enum: ['flac', 'opus', 'wav'],
-    required: function() { return this.analysisType === 'audio'; },
-    default: null
-  },
-  timestamp: {
-    type: Date,
-    default: Date.now
+  {
+    versionKey: false,
+    timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
   }
-}, {
-  timestamps: true
+);
+
+// Validasi: minimal salah satu harus ada
+FraudAnalysisSchema.pre('validate', function (next) {
+  const hasConversation = !!this.conversationId;
+  const hasCallSession = typeof this.callSessionId === 'string' && this.callSessionId.trim().length > 0;
+  if (!hasConversation && !hasCallSession) {
+    return next(new Error('Either conversationId or callSessionId is required'));
+  }
+  next();
 });
 
-// Index for efficient queries
-fraudAnalysisSchema.index({ conversationId: 1, analysisType: 1 });
-fraudAnalysisSchema.index({ userId: 1, timestamp: -1 });
-fraudAnalysisSchema.index({ fraudScore: 1, alertTriggered: 1 });
-
-// Static method to get fraud history for a conversation
-fraudAnalysisSchema.statics.getFraudHistory = function(conversationId, analysisType = null) {
-  const query = { conversationId };
-  if (analysisType) {
-    query.analysisType = analysisType;
-  }
-  return this.find(query).sort({ timestamp: -1 });
-};
-
-// Static method to get recent fraud alerts
-fraudAnalysisSchema.statics.getRecentAlerts = function(userId, hours = 24) {
-  const timeThreshold = new Date(Date.now() - hours * 60 * 60 * 1000);
-  return this.find({
-    userId,
-    alertTriggered: true,
-    timestamp: { $gte: timeThreshold }
-  }).sort({ timestamp: -1 });
-};
-
-// Instance method to check if this analysis should trigger an alert
-fraudAnalysisSchema.methods.shouldTriggerAlert = function() {
+// Method: aturan alert default
+FraudAnalysisSchema.methods.shouldTriggerAlert = function () {
   if (this.analysisType === 'text') {
-    return this.fraudScore === 2; // Scam detected
+    return this.fraudScore === 2; // text: 2 = fraud
   }
   if (this.analysisType === 'audio') {
-    return this.fraudScore === 1; // Fraud detected
+    return this.fraudScore === 1; // audio: 1 = fraud
   }
   return false;
 };
 
-// Instance method to trigger alert
-fraudAnalysisSchema.methods.triggerAlert = function() {
+FraudAnalysisSchema.methods.triggerAlert = async function () {
   this.alertTriggered = true;
-  this.alertTimestamp = new Date();
-  return this.save();
+  await this.save();
+  return true;
 };
 
-module.exports = mongoose.model('FraudAnalysis', fraudAnalysisSchema);
+// Statics: histori & alerts (dipakai routes)
+FraudAnalysisSchema.statics.getFraudHistory = async function (conversationIdOrCallId, analysisType) {
+  const q = {};
+  if (conversationIdOrCallId) {
+    if (Types.ObjectId.isValid(conversationIdOrCallId)) {
+      q.conversationId = new Types.ObjectId(conversationIdOrCallId);
+    } else {
+      q.callSessionId = String(conversationIdOrCallId);
+    }
+  }
+  if (analysisType) q.analysisType = analysisType;
+  return this.find(q).sort({ timestamp: -1 }).limit(200);
+};
+
+FraudAnalysisSchema.statics.getRecentAlerts = async function (userId, hours = 24) {
+  const since = new Date(Date.now() - hours * 3600 * 1000);
+  const q = { alertTriggered: true, timestamp: { $gte: since } };
+  if (userId && Types.ObjectId.isValid(userId)) q.userId = new Types.ObjectId(userId);
+  return this.find(q).sort({ timestamp: -1 }).limit(200);
+};
+
+// Indexes untuk query cepat
+FraudAnalysisSchema.index({ conversationId: 1, timestamp: -1 });
+FraudAnalysisSchema.index({ callSessionId: 1, timestamp: -1 });
+FraudAnalysisSchema.index({ userId: 1, timestamp: -1 });
+FraudAnalysisSchema.index({ analysisType: 1, timestamp: -1 });
+FraudAnalysisSchema.index({ alertTriggered: 1, timestamp: -1 });
+
+module.exports = mongoose.models.FraudAnalysis || mongoose.model('FraudAnalysis', FraudAnalysisSchema);

@@ -2,6 +2,16 @@ const FraudAnalysis = require('../models/FraudAnalysis');
 const vllmClient = require('./vllmClient');
 const audioProcessor = require('./audioProcessor');
 
+// Tambahkan di paling atas file:
+const { Types } = require('mongoose');
+const isValidObjectId = (v) => {
+  try {
+    if (!v) return false;
+    if (!Types.ObjectId.isValid(v)) return false;
+    return String(new Types.ObjectId(v)) === String(v);
+  } catch { return false; }
+};
+
 class FraudDetectionService {
   constructor() {
     this.debounceTimeouts = new Map(); // Store debounce timeouts by conversation ID
@@ -129,58 +139,79 @@ class FraudDetectionService {
    */
   async analyzeAudioChunk(audioBuffer, format, metadata = {}) {
     try {
-      console.log(`🎵 Starting audio analysis - Format: ${format}`);
-      
+      // Normalisasi format input (auto-detect jika unknown)
+      let inputFormat = (format || '').toLowerCase().trim();
+      if (!inputFormat || inputFormat === 'unknown') {
+        inputFormat = audioProcessor.detectAudioFormat(audioBuffer);
+      }
+      console.log(`🎵 Starting audio analysis - Format: ${inputFormat}`);
+  
       // Validate audio input
-      const validation = audioProcessor.validateAudioInput(audioBuffer, format);
+      const validation = audioProcessor.validateAudioInput(audioBuffer, inputFormat);
       if (!validation.valid) {
         throw new Error(`Audio validation failed: ${validation.errors.join(', ')}`);
       }
-
-      // Process audio to correct format
-      const processingResult = await audioProcessor.processAudioChunk(audioBuffer, format);
-      
-      if (!processingResult.success) {
-        throw new Error(processingResult.error || 'Audio processing failed');
+  
+      // Convert/normalize ke WAV 16k mono (FFmpeg)
+      const processingResult = await audioProcessor.processAudioChunk(audioBuffer, inputFormat);
+      if (!processingResult?.success) {
+        throw new Error(processingResult?.error || 'Audio processing failed');
       }
-
-      // Call VLLM audio analysis
+  
+      // Analisis ke Gemini
       const analysisResult = await vllmClient.analyzeAudio(
-        processingResult.audioBuffer, 
+        processingResult.audioBuffer,
         processingResult.metadata
       );
-      
-      if (!analysisResult.success) {
-        throw new Error(analysisResult.error || 'Audio analysis failed');
+      if (!analysisResult?.success) {
+        throw new Error(analysisResult?.error || 'Audio analysis failed');
       }
-
-      // Store analysis result
-      const fraudAnalysis = await this.storeFraudAnalysis({
-        conversationId: metadata.conversationId,
+  
+      // Tentukan conversationId (ObjectId valid) atau fallback callSessionId (string)
+      const convId = isValidObjectId(metadata.conversationId) ? metadata.conversationId : undefined;
+      const callSessionId = convId
+        ? undefined
+        : (metadata.conversationId || metadata.callSessionId || `call_${metadata.userId}_${Date.now()}`);
+  
+      // Siapkan dokumen untuk disimpan
+      const doc = {
+        conversationId: convId,                      // hanya diisi jika valid ObjectId
+        callSessionId,                               // fallback string untuk sesi panggilan
         analysisType: 'audio',
         userId: metadata.userId,
-        fraudScore: analysisResult.fraudScore,
+        fraudScore: analysisResult.fraudScore,       // legacy audio: 1 fraud, 0 normal
         confidence: analysisResult.confidence,
         inputData: {
-          originalFormat: format,
-          ...processingResult.metadata
+          originalFormat: inputFormat,               // format asli dari klien
+          finalFormat: 'wav',                        // hasil konversi
+          ...processingResult.metadata,              // { format:'wav', sampleRate, channels, duration, ... }
+          model: analysisResult.details || null      // { score, label, reason }
         },
-        modelResponse: analysisResult.rawResponse,
+        modelResponse: analysisResult.rawResponse,   // JSON mentah dari Gemini
         processingTime: analysisResult.processingTime,
         audioChunkIndex: metadata.chunkIndex || 0,
-        audioFormat: format
-      });
-
-      // Check if alert should be triggered
-      const shouldAlert = fraudAnalysis.shouldTriggerAlert();
+        audioFormat: 'wav'                           // SIMPAN final format agar lolos enum schema lama
+      };
+  
+      // Hapus field undefined agar gak nabrak schema
+      if (!doc.conversationId) delete doc.conversationId;
+      if (!doc.callSessionId) delete doc.callSessionId;
+  
+      // Simpan
+      const fraudAnalysis = await this.storeFraudAnalysis(doc);
+  
+      // Keputusan alert (legacy mapping audio)
+      const shouldAlert = fraudAnalysis.shouldTriggerAlert
+        ? fraudAnalysis.shouldTriggerAlert()
+        : (analysisResult.fraudScore === 1);
+  
       let alertResult = null;
-
       if (shouldAlert && this.enableRealTimeAlerts) {
         alertResult = await this.triggerFraudAlert(fraudAnalysis, 'audio');
       }
-
+  
       console.log(`✅ Audio analysis completed - Score: ${analysisResult.fraudScore}, Alert: ${shouldAlert}`);
-
+  
       return {
         success: true,
         analysisId: fraudAnalysis._id,
@@ -189,16 +220,16 @@ class FraudDetectionService {
         alertTriggered: shouldAlert,
         alertData: alertResult,
         processingTime: analysisResult.processingTime,
-        chunkIndex: metadata.chunkIndex || 0
+        chunkIndex: metadata.chunkIndex || 0,
+        details: analysisResult.details || null
       };
-
+  
     } catch (error) {
       console.error('❌ Audio analysis error:', error.message);
-      
       return {
         success: false,
         error: error.message,
-        fraudScore: 0, // Default to normal
+        fraudScore: 0,
         confidence: 0
       };
     }
