@@ -1,253 +1,256 @@
+// services/vllmClient.js
+// Full Gemini (text & audio) with strict JSON {score,label,reason}
+
 const axios = require('axios');
+const { GoogleGenAI, Type } = require('@google/genai');
 
 class VLLMClient {
   constructor() {
-    this.sailor2Endpoint = process.env.SAILOR2_ENDPOINT;
-    this.qwen2AudioEndpoint = process.env.QWEN2_AUDIO_ENDPOINT;
-    this.timeout = 30000; // 30 seconds timeout
+    // ===== Gemini config =====
+    // Env:
+    //   GEMINI_API_KEY=...
+    //   GEMINI_TEXT_MODEL=gemini-2.5-flash
+    //   GEMINI_AUDIO_MODEL=gemini-2.5-flash
+    this.geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    this.geminiTextModel = process.env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash';
+    this.geminiAudioModel = process.env.GEMINI_AUDIO_MODEL || 'gemini-2.5-flash';
+    this.timeout = 30000;
+
+    if (!this.geminiApiKey) {
+      console.warn('[VLLMClient] Missing GEMINI_API_KEY / GOOGLE_API_KEY');
+    }
+    this.genai = new GoogleGenAI({ apiKey: this.geminiApiKey });
   }
 
+  // =========================
+  // TEXT ANALYSIS (Gemini)
+  // =========================
   /**
-   * Analyze text for fraud detection using Sailor2 model
-   * @param {Array} chatHistory - Array of chat messages
-   * @param {Object} context - Additional context (user info, etc.)
-   * @returns {Promise<Object>} Analysis result with fraud score (1=normal, 2=scam)
+   * @param {Array<{role:string, content:string}>} chatHistory
+   * @param {Object} context
    */
   async analyzeText(chatHistory, context = {}) {
+    const startTime = Date.now();
     try {
-      const startTime = Date.now();
-      
-      // Format chat history for the model
-      const prompt = this.formatChatHistoryForAnalysis(chatHistory, context);
-      
-      console.log('📝 Sending text analysis request to Sailor2...');
-      
-      const response = await axios.post(
-        `${this.sailor2Endpoint}/v1/completions`,
-        {
-          model: "fauzanazz/sailor2-fraud-indo-8b-merged",
-          prompt: prompt,
-          max_tokens: 10,
-          temperature: 0.1,
-          stop: ["\n"]
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          timeout: this.timeout
-        }
-      );
+      if (!this.genai) throw new Error('Gemini client not initialized');
 
+      const prompt = this.formatChatHistoryForAnalysis(chatHistory, context);
+
+      // Use JSON structured output for strict schema
+      const response = await this.genai.models.generateContent({
+        model: this.geminiTextModel,
+        contents: prompt, // string OK; SDK wraps as Content
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              score: { type: Type.NUMBER },
+              label: { type: Type.STRING, enum: ['fraud', 'normal'] },
+              reason: { type: Type.STRING },
+            },
+            required: ['score', 'label', 'reason'],
+            propertyOrdering: ['score', 'label', 'reason'],
+          },
+        },
+      });
+
+      const rawResponse = String(response?.text ?? '').trim();
       const processingTime = Date.now() - startTime;
-      const rawResponse = response.data.choices[0].text.trim();
-      
-      console.log('✅ Sailor2 response received:', rawResponse);
-      
-      // Parse the response to extract fraud score
-      const fraudScore = this.parseTextAnalysisResponse(rawResponse);
-      
+
+      const { score, label, reason } = safeParseThreeFieldJSON(rawResponse);
+      // Legacy mapping (TEXT): 2=fraud, 1=normal
+      const fraudScore = (label === 'fraud') || (typeof score === 'number' && score >= 0.5) ? 2 : 1;
+
       return {
+        success: true,
         fraudScore,
-        confidence: response.data.confidence || 0.8,
+        confidence: typeof score === 'number' ? score : 0.8,
         processingTime,
         rawResponse,
-        success: true
+        details: { score, label, reason },
       };
-      
     } catch (error) {
-      console.error('❌ Text analysis error:', error.message);
-      
       return {
-        fraudScore: 1, // Default to normal when error occurs
-        confidence: 0,
-        processingTime: 0,
+        success: false,
         error: error.message,
-        success: false
+        fraudScore: 1, // default normal (legacy text)
+        confidence: 0.5,
+        processingTime: Date.now() - startTime,
+        rawResponse: '',
       };
     }
   }
 
+  formatChatHistoryForAnalysis(chatHistory, context) {
+    const lines = (chatHistory || []).map(m => {
+      const r = (m.role || '').toLowerCase();
+      const who = r === 'user' ? 'User' : 'Assistant';
+      // singkatkan konten agar tidak membengkak
+      const c = (m.content || '').slice(0, 4000);
+      return `${who}: ${c}`;
+    });
+    const joined = lines.join('\n');
+
+    const contextStr = `userId=${context.userId || '-'}; conversationId=${context.conversationId || '-'}`;
+
+    return [
+      'You are a fraud/scam detector for text chat.',
+      'Decide if the conversation shows fraud signals (OTP asking, money urgency, phishing cues, spoofing, social engineering).',
+      'Return STRICT JSON only (no extra text, no code fences) with keys: score, label, reason.',
+      'score ∈ [0,1] is fraud likelihood; label ∈ {"fraud","normal"}; reason <= 200 chars.',
+      `Context: ${contextStr}`,
+      '',
+      'Chat Transcript:',
+      joined,
+      '',
+      'Output keys EXACTLY: score,label,reason',
+    ].join('\n');
+  }
+
+  // =========================
+  // AUDIO ANALYSIS (Gemini)
+  // =========================
   /**
-   * Analyze audio for fraud detection using Qwen2.5-audio model
-   * @param {Buffer} audioBuffer - Audio data buffer
-   * @param {Object} metadata - Audio metadata (format, sampleRate, etc.)
-   * @returns {Promise<Object>} Analysis result with fraud score (0=normal, 1=fraud)
+   * @param {Buffer} audioBuffer - WAV PCM 16k mono (audioProcessor already normalizes)
+   * @param {Object} metadata
    */
   async analyzeAudio(audioBuffer, metadata = {}) {
+    const startTime = Date.now();
     try {
-      const startTime = Date.now();
-      
-      // Convert audio buffer to base64 for API transmission
+      if (!this.genai) throw new Error('Gemini client not initialized');
+
       const audioBase64 = audioBuffer.toString('base64');
-      
-      // Format prompt for audio analysis
       const prompt = this.formatAudioPromptForAnalysis(metadata);
-      
-      console.log('🎵 Sending audio analysis request to Qwen2.5-audio...');
-      
-      const response = await axios.post(
-        `${this.qwen2AudioEndpoint}/v1/completions`,
-        {
-          model: "fauzanazz/qwen2-audio-indo-fraud-7b-merged",
-          prompt: prompt,
-          audio: audioBase64,
-          max_tokens: 5,
-          temperature: 0.1,
-          stop: ["\n"]
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json'
+
+      const response = await this.genai.models.generateContent({
+        model: this.geminiAudioModel,
+        contents: [
+          { text: prompt },
+          { inlineData: { mimeType: 'audio/wav', data: audioBase64 } },
+        ],
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              score: { type: Type.NUMBER },
+              label: { type: Type.STRING, enum: ['fraud', 'normal'] },
+              reason: { type: Type.STRING },
+            },
+            required: ['score', 'label', 'reason'],
+            propertyOrdering: ['score', 'label', 'reason'],
           },
-          timeout: this.timeout
-        }
-      );
+        },
+      });
 
+      const rawText = String(response?.text ?? '').trim();
       const processingTime = Date.now() - startTime;
-      const rawResponse = response.data.choices[0].text.trim();
-      
-      console.log('✅ Qwen2.5-audio response received:', rawResponse);
-      
-      // Parse the response to extract fraud score
-      const fraudScore = this.parseAudioAnalysisResponse(rawResponse);
-      
+      const { score, label, reason } = safeParseThreeFieldJSON(rawText);
+
+      // Legacy mapping (AUDIO): 1=fraud, 0=normal
+      const fraudScore = (label === 'fraud') || (typeof score === 'number' && score >= 0.5) ? 1 : 0;
+
       return {
+        success: true,
         fraudScore,
-        confidence: response.data.confidence || 0.8,
+        confidence: typeof score === 'number' ? score : 0.8,
         processingTime,
-        rawResponse,
-        success: true
+        rawResponse: rawText,
+        details: { score, label, reason },
       };
-      
     } catch (error) {
-      console.error('❌ Audio analysis error:', error.message);
-      
       return {
-        fraudScore: 0, // Default to normal when error occurs
-        confidence: 0,
-        processingTime: 0,
+        success: false,
         error: error.message,
-        success: false
+        fraudScore: 0,
+        confidence: 0.5,
+        processingTime: Date.now() - startTime,
+        rawResponse: '',
       };
     }
   }
 
-  /**
-   * Format chat history into a prompt for fraud analysis
-   * @param {Array} chatHistory - Array of chat messages
-   * @param {Object} context - Additional context
-   * @returns {string} Formatted prompt
-   */
-  formatChatHistoryForAnalysis(chatHistory, context) {
-    let prompt = "Analyze the following conversation for potential fraud or scam indicators. Respond with only '1' for normal conversation or '2' for scam/fraud detected.\n\n";
-    
-    // Add context if available
-    if (context.userInfo) {
-      prompt += `User Context: ${JSON.stringify(context.userInfo)}\n\n`;
-    }
-    
-    // Add conversation history
-    prompt += "Conversation:\n";
-    chatHistory.forEach((message, index) => {
-      prompt += `${message.senderName}: ${message.content}\n`;
-    });
-    
-    prompt += "\nAnalysis (1=normal, 2=scam): ";
-    
-    return prompt;
+  formatAudioPromptForAnalysis(metadata = {}) {
+    const meta = {
+      format: metadata.format || 'wav',
+      sampleRate: metadata.sampleRate || 16000,
+      channels: metadata.channels || 1,
+      duration: metadata.duration ?? 'unknown',
+    };
+
+    return [
+      'You are an expert call-audio fraud detector (voice phishing, OTP ask, money urgency, impersonation/spoofing).',
+      'Analyze the attached audio and return STRICT JSON only with: score, label, reason.',
+      'score ∈ [0,1] (fraud likelihood); label ∈ {"fraud","normal"}; reason <= 200 chars.',
+      `Audio metadata: ${JSON.stringify(meta)}`,
+      '',
+      'Output keys EXACTLY: score,label,reason',
+    ].join('\n');
   }
 
-  /**
-   * Format audio metadata into a prompt for audio analysis
-   * @param {Object} metadata - Audio metadata
-   * @returns {string} Formatted prompt
-   */
-  formatAudioPromptForAnalysis(metadata) {
-    let prompt = "Analyze the following audio for potential fraud indicators in speech patterns, voice characteristics, or suspicious behavior. Respond with only '0' for normal audio or '1' for fraud detected.\n\n";
-    
-    if (metadata) {
-      prompt += `Audio Metadata: Sample Rate: ${metadata.sampleRate || 16000}Hz, Format: ${metadata.format || 'unknown'}, Duration: ${metadata.duration || 'unknown'}s\n\n`;
-    }
-    
-    prompt += "Audio Analysis (0=normal, 1=fraud): ";
-    
-    return prompt;
-  }
-
-  /**
-   * Parse text analysis response and extract fraud score
-   * @param {string} rawResponse - Raw model response
-   * @returns {number} Fraud score (1 or 2)
-   */
-  parseTextAnalysisResponse(rawResponse) {
-    // Extract number from response
-    const match = rawResponse.match(/[12]/);
-    if (match) {
-      const score = parseInt(match[0]);
-      return (score === 1 || score === 2) ? score : 1;
-    }
-    
-    // Fallback: look for keywords
-    const lowerResponse = rawResponse.toLowerCase();
-    if (lowerResponse.includes('scam') || lowerResponse.includes('fraud') || lowerResponse.includes('suspicious')) {
-      return 2;
-    }
-    
-    return 1; // Default to normal
-  }
-
-  /**
-   * Parse audio analysis response and extract fraud score
-   * @param {string} rawResponse - Raw model response
-   * @returns {number} Fraud score (0 or 1)
-   */
-  parseAudioAnalysisResponse(rawResponse) {
-    // Extract number from response
-    const match = rawResponse.match(/[01]/);
-    if (match) {
-      const score = parseInt(match[0]);
-      return (score === 0 || score === 1) ? score : 0;
-    }
-    
-    // Fallback: look for keywords
-    const lowerResponse = rawResponse.toLowerCase();
-    if (lowerResponse.includes('fraud') || lowerResponse.includes('suspicious') || lowerResponse.includes('fake')) {
-      return 1;
-    }
-    
-    return 0; // Default to normal
-  }
-
-  /**
-   * Check if VLLM services are available
-   * @returns {Promise<Object>} Service availability status
-   */
+  // =========================
+  // HEALTH CHECKS
+  // =========================
   async checkServiceHealth() {
     const results = {
-      sailor2: false,
-      qwen2Audio: false,
-      timestamp: new Date()
+      geminiText: false,
+      geminiAudio: false,
+      timestamp: new Date(),
     };
 
     try {
-      // Check Sailor2 service
-      const sailor2Response = await axios.get(`${this.sailor2Endpoint}/health`, { timeout: 5000 });
-      results.sailor2 = sailor2Response.status === 200;
-    } catch (error) {
-      console.log('Sailor2 service unavailable:', error.message);
+      const pingText = await this.genai.models.generateContent({
+        model: this.geminiTextModel,
+        contents: 'ping',
+      });
+      results.geminiText = !!(pingText && (pingText.text ?? '').length >= 0);
+    } catch (e) {
+      console.log('Gemini text unavailable:', e.message);
     }
 
     try {
-      // Check Qwen2.5-audio service
-      const qwen2Response = await axios.get(`${this.qwen2AudioEndpoint}/health`, { timeout: 5000 });
-      results.qwen2Audio = qwen2Response.status === 200;
-    } catch (error) {
-      console.log('Qwen2.5-audio service unavailable:', error.message);
+      const pingAudio = await this.genai.models.generateContent({
+        model: this.geminiAudioModel,
+        contents: 'ping',
+      });
+      results.geminiAudio = !!(pingAudio && (pingAudio.text ?? '').length >= 0);
+    } catch (e) {
+      console.log('Gemini audio unavailable:', e.message);
     }
 
     return results;
   }
+}
+
+// ===== Utils =====
+function safeParseThreeFieldJSON(raw) {
+  if (!raw) return { score: undefined, label: undefined, reason: undefined };
+  let t = String(raw).trim();
+
+  // strip fences if any
+  if (t.startsWith('```')) {
+    t = t.replace(/^```[a-zA-Z]*\s*/, '').replace(/```$/, '').trim();
+  }
+  const i = t.indexOf('{');
+  const j = t.lastIndexOf('}');
+  if (i >= 0 && j > i) t = t.slice(i, j + 1);
+
+  let obj = null;
+  try { obj = JSON.parse(t); } catch (_e) {}
+
+  let score = (obj && typeof obj.score === 'number') ? obj.score : undefined;
+  if (typeof score === 'number') score = Math.max(0, Math.min(1, score));
+
+  let label = (obj && typeof obj.label === 'string') ? obj.label.toLowerCase().trim() : undefined;
+  if (label !== 'fraud' && label !== 'normal') {
+    const base = JSON.stringify(obj || {}) + ' ' + raw.toLowerCase();
+    if (/fraud|scam|phishing|spoof|penipuan/.test(base)) label = 'fraud';
+    else if (/normal|legit|benign|aman|bukan penipuan/.test(base)) label = 'normal';
+  }
+  const reason = (obj && typeof obj.reason === 'string') ? obj.reason : undefined;
+
+  return { score, label, reason };
 }
 
 module.exports = new VLLMClient();
