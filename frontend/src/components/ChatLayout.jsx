@@ -83,7 +83,12 @@ function ChatLayout({ user, socket, users }) {
     if (!incomingCall && !isInCall) {
       setCallState(prev => ({
         ...prev,
-        incomingCall: { offer: data.offer, from: data.from, fromUserId: data.fromUserId }
+        incomingCall: { 
+          offer: data.offer, 
+          from: data.from, 
+          fromUserId: data.fromUserId,
+          conversationId: data.conversationId
+        }
       }));
     } else {
       console.log('Ignoring duplicate call offer - already in call or has pending call');
@@ -113,7 +118,8 @@ function ChatLayout({ user, socket, users }) {
       type: 'incoming', 
       offer: incomingCall.offer, 
       from: incomingCall.from,
-      fromUserId: incomingCall.fromUserId 
+      fromUserId: incomingCall.fromUserId,
+      conversationId: incomingCall.conversationId
     };
     
     // CRITICAL FIX: Single atomic state update to prevent prop flicker
@@ -135,9 +141,10 @@ function ChatLayout({ user, socket, users }) {
 
   const startCall = (targetUserId) => {
     console.log('Starting call to user:', targetUserId);
+    const callSessionId = `call_${user._id}_${targetUserId}_${Date.now()}`;
     setCallState({
       isInCall: true,
-      callData: { type: 'outgoing', targetUserId },
+      callData: { type: 'outgoing', targetUserId, conversationId: callSessionId },
       incomingCall: null
     });
   };

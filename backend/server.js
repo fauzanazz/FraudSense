@@ -245,14 +245,16 @@ io.on('connection', (socket) => {
       fromUserId: data.fromUserId,
       toUserId: data.to, 
       hasOffer: !!data.offer,
-      offerType: data.offer?.type 
+      offerType: data.offer?.type,
+      conversationId: data.conversationId
     });
     const targetSocketId = userSockets.get(data.to);
     if (targetSocketId) {
       socket.to(targetSocketId).emit('call-offer', {
         offer: data.offer,
         from: data.from,
-        fromUserId: data.fromUserId
+        fromUserId: data.fromUserId,
+        conversationId: data.conversationId
       });
       console.log('✅ Call offer sent to socket:', targetSocketId);
     } else {

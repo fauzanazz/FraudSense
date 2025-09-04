@@ -6,19 +6,6 @@ function MessageList({ messages, currentUserId, typingUsers = [] }) {
     });
   };
 
-  const highlightSensitive = (text) => {
-    const keywords = ['password', 'pin', 'otp', 'ssn', 'credit card', 'cvv', 'bank', 'account number'];
-    const escaped = keywords.map(k => k.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'));
-    const pattern = new RegExp(`(${escaped.join('|')})`, 'ig');
-    const parts = text.split(pattern);
-    return parts.map((part, idx) =>
-      pattern.test(part) ? (
-        <mark key={idx} className="bg-red-500/30 text-red-200 rounded px-1">{part}</mark>
-      ) : (
-        <span key={idx}>{part}</span>
-      )
-    );
-  };
 
   return (
     <div className="flex flex-col gap-2">
@@ -32,7 +19,7 @@ function MessageList({ messages, currentUserId, typingUsers = [] }) {
             className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
           >
             <div className={`${isOwn ? 'bg-indigo-600 text-white rounded-tr-[4px]' : 'bg-neutral-800 text-neutral-200 border border-neutral-700 rounded-tl-[4px]'} max-w-[70%] p-3 rounded-[10px] break-words`}>
-              <div className="mb-1 leading-relaxed">{highlightSensitive(message.content)}</div>
+              <div className="mb-1 leading-relaxed">{message.content}</div>
               <div className="flex justify-between text-[0.7rem] opacity-70 space-x-2">
                 <span>{isOwn ? 'You' : senderName}</span>
                 <span>{formatTime(message.timestamp)}</span>
