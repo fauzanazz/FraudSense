@@ -10,6 +10,10 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
   const [remoteAudioLevel, setRemoteAudioLevel] = useState(0);
   const [audioFormat, setAudioFormat] = useState('webm');
   const [isRecording, setIsRecording] = useState(false);
+  const [fraudAlerts, setFraudAlerts] = useState([]);
+  const [activeFraudWarning, setActiveFraudWarning] = useState(null);
+  const [fraudScore, setFraudScore] = useState(0);
+  const [callSessionId, setCallSessionId] = useState(null);
 
   const localVideoRef = useRef();
   const remoteVideoRef = useRef();
@@ -42,12 +46,16 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
     socket.on('call-answer', handleCallAnswer);
     socket.on('call-ended', handleCallEnded);
     socket.on('ice-candidate', handleIceCandidate);
+    socket.on('fraud-alert', handleFraudAlert);
+    socket.on('fraud-analysis-result', handleFraudAnalysisResult);
     
     return () => {
       console.log('🔌 Cleaning up socket listeners');
       socket.off('call-answer', handleCallAnswer);
       socket.off('call-ended', handleCallEnded);
       socket.off('ice-candidate', handleIceCandidate);
+      socket.off('fraud-alert', handleFraudAlert);
+      socket.off('fraud-analysis-result', handleFraudAnalysisResult);
     };
   }, []);
 
@@ -96,6 +104,14 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
   const initializeCall = async () => {
     try {
       console.log('🚀 Initializing call:', callData);
+      
+      // Create a consistent call session ID for both participants
+      const sessionId = callData.conversationId || `call_${user._id}_${callData.targetUserId || callData.fromUserId}_${Date.now()}`;
+      setCallSessionId(sessionId);
+      
+      // Join the call session room for fraud alerts
+      socket.emit('joinRoom', sessionId);
+      console.log('🏠 Joined call session room:', sessionId);
       
       // Check if we're in a secure context
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -390,7 +406,8 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
           to: callData.targetUserId,
           from: user.username,
           fromUserId: user._id,
-          offer: offer
+          offer: offer,
+          conversationId: callSessionId
         });
       }
 
@@ -517,6 +534,52 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
     onEndCall();
   };
 
+  const handleFraudAlert = (alertData) => {
+    console.log('🚨 Fraud alert received in video call:', alertData);
+    console.log('📊 Alert details:', {
+      type: alertData.type,
+      fraudScore: alertData.fraudScore,
+      confidence: alertData.confidence,
+      severity: alertData.severity,
+      message: alertData.message
+    });
+    
+    setFraudAlerts(prev => [...prev, alertData]);
+    
+    // Audio fraud only: score 1 = fraud detected, score 0 = normal
+    setFraudScore(alertData.fraudScore === 1 ? 1 : 0);
+    
+    // Show warning modal for high severity alerts
+    if (alertData.severity === 'high') {
+      setActiveFraudWarning(alertData.fraudScore);
+    }
+  };
+
+  const handleFraudAnalysisResult = (result) => {
+    console.log('📊 Fraud analysis result in video call:', result);
+    console.log('📊 Analysis details:', {
+      success: result.success,
+      type: result.type,
+      fraudScore: result.fraudScore,
+      confidence: result.confidence,
+      alertTriggered: result.alertTriggered
+    });
+    
+    // Update fraud score based on analysis result
+    if (result.success) {
+      // Audio fraud only: score 1 = fraud detected, score 0 = normal
+      setFraudScore(result.fraudScore === 1 ? 1 : 0);
+    }
+  };
+
+  const dismissAlert = (alertTimestamp) => {
+    setFraudAlerts(prev => prev.filter(alert => alert.timestamp !== alertTimestamp));
+  };
+
+  const dismissFraudWarning = () => {
+    setActiveFraudWarning(null);
+  };
+
   const endCall = () => {
     socket.emit('call-ended', {
       to: callData.type === 'outgoing' ? callData.targetUserId : callData.fromUserId
@@ -636,12 +699,22 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
                   : t.includes('mpeg') || t.includes('mp3') ? 'mp3'
                   : 'unknown';
   
-        socket.emit('audio-chunk', {
-          conversationId: callData.conversationId || `call_${user._id}_${Date.now()}`,
+        const audioChunkData = {
+          conversationId: callSessionId || `call_${user._id}_${Date.now()}`,
           audioData: base64Data,
           userId: user._id,
           format: fmt
+        };
+        
+        console.log('🎙️ Sending audio chunk to backend:', {
+          conversationId: audioChunkData.conversationId,
+          userId: audioChunkData.userId,
+          format: audioChunkData.format,
+          dataSize: base64Data.length,
+          blobType: cumulativeBlob.type
         });
+        
+        socket.emit('audio-chunk', audioChunkData);
       };
   
       mediaRecorder.onerror = (event) => {
@@ -756,15 +829,25 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
     setLocalAudioLevel(0);
     setRemoteAudioLevel(0);
     setIsRecording(false);
+    setFraudAlerts([]);
+    setActiveFraudWarning(null);
+    setFraudScore(0);
   };
 
   return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[1000]">
       <div className="w-[90%] max-w-[800px] h-[80%] bg-neutral-900 rounded-[10px] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between p-4 bg-neutral-800 text-white rounded-t-[10px]">
-          <h3 className="m-0 text-[1.2rem]">
-            {callData.type === 'outgoing' ? 'Calling...' : `Call from ${callData.from}`}
-          </h3>
+          <div className="flex items-center gap-4">
+            <h3 className="m-0 text-[1.2rem]">
+              {callData.type === 'outgoing' ? 'Calling...' : `Call from ${callData.from}`}
+            </h3>
+            {fraudScore > 0 && (
+              <div className="text-sm font-semibold px-2 py-1 rounded-full bg-red-500/20 text-red-300">
+                🚨 FRAUD DETECTED
+              </div>
+            )}
+          </div>
           <button onClick={endCall} className="bg-transparent border-0 text-white text-[1.5rem] cursor-pointer p-0 w-[30px] h-[30px] flex items-center justify-center hover:bg-white/10 rounded-full">×</button>
         </div>
         
@@ -828,8 +911,45 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
             <p className="m-0">Remote stream tracks: {remoteStream?.getTracks().length || 0}</p>
             <p className="m-0">Video enabled: {isVideoEnabled ? '✅' : '❌'}</p>
             <p className="m-0">Audio enabled: {isAudioEnabled ? '✅' : '❌'}</p>
+            <p className="m-0">Fraud Status: {fraudScore > 0 ? 'DETECTED' : 'NORMAL'}</p>
           </div>
         </div>
+
+        {/* Fraud Warning Modal */}
+        {activeFraudWarning != null && (
+          <div className="fixed inset-0 bg-black/80 z-[2000] flex items-center justify-center">
+            <div className="bg-white border border-neutral-200 rounded-2xl p-6 w-[90%] max-w-md text-center shadow-2xl">
+              <div className="text-sm text-neutral-600 mb-2">⚠️ Call Warning</div>
+              <div className="text-2xl font-semibold mb-3 text-red-600">🚨 FRAUD DETECTED</div>
+              <p className="text-neutral-700 mb-6">Our system detected suspicious patterns in this call. Proceed with extreme caution.</p>
+              <button onClick={dismissFraudWarning} className="px-5 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white cursor-pointer">Understood</button>
+            </div>
+          </div>
+        )}
+
+        {/* Fraud Alerts */}
+        {fraudAlerts.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 m-0 p-0">
+            {fraudAlerts.map((alert, index) => (
+              <div key={index} className={`${alert.severity === 'high' ? 'bg-red-50 border-l-4 border-red-400' : 'bg-amber-50 border-l-4 border-amber-400'} m-0 p-0 animate-[slideIn_0.3s_ease-out]`}>
+                <div className="flex items-start p-3 gap-2">
+                  <span className="text-[1.2rem] text-red-500 shrink-0 mt-[0.1rem]">🚨</span>
+                  <div className="flex-1 min-w-0">
+                    <strong className="text-neutral-800 text-[0.9rem] mb-1 block">Call Fraud Alert ({alert.type})</strong>
+                    <p className="m-1 my-1 text-neutral-700 text-[0.85rem] leading-[1.3]">{alert.message}</p>
+                    <small className="text-neutral-600 text-[0.75rem] block mt-1">Score: {alert.fraudScore}, Confidence: {(alert.confidence * 100).toFixed(1)}%</small>
+                  </div>
+                  <button 
+                    className="text-neutral-500 text-[1.2rem] w-5 h-5 shrink-0 flex items-center justify-center rounded-full hover:bg-black/5 hover:text-red-500 cursor-pointer"
+                    onClick={() => dismissAlert(alert.timestamp)}
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="p-5 flex justify-center">
           {/* Audio Format Selection */}
