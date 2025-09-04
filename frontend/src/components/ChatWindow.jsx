@@ -8,7 +8,7 @@ function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
   const [fraudAlerts, setFraudAlerts] = useState([]);
   const [fraudAnalysisResults, setFraudAnalysisResults] = useState([]);
   const messagesEndRef = useRef(null);
-  const [simulatedFraudScore, setSimulatedFraudScore] = useState(55);
+  const [simulatedFraudScore, setSimulatedFraudScore] = useState(0);
   const [shownFraudThresholds, setShownFraudThresholds] = useState(new Set());
   const [activeFraudWarning, setActiveFraudWarning] = useState(null);
   const [typingUsers, setTypingUsers] = useState([]);
@@ -47,14 +47,8 @@ function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
     scrollToBottom();
   }, [messages]);
 
-  // Set static fraud score to 55%
   useEffect(() => {
-    setSimulatedFraudScore(55);
-  }, []);
-
-  // Trigger warning modal when passing configured thresholds
-  useEffect(() => {
-    const thresholds = [50, 75, 80, 90];
+    const thresholds = [50];
     for (const t of thresholds) {
       if (simulatedFraudScore >= t && !shownFraudThresholds.has(t)) {
         setActiveFraudWarning(t);
@@ -85,16 +79,13 @@ function ChatWindow({ conversation, user, socket, onStartCall, users = [] }) {
   const handleFraudAlert = (alertData) => {
     console.log('🚨 Fraud alert received:', alertData);
     setFraudAlerts(prev => [...prev, alertData]);
-    
-    // Auto-dismiss alert after 10 seconds
-    setTimeout(() => {
-      setFraudAlerts(prev => prev.filter(alert => alert.timestamp !== alertData.timestamp));
-    }, 10000);
+
+    setSimulatedFraudScore(alertData.confidence * 100)
   };
 
   const handleFraudAnalysisResult = (result) => {
     console.log('📊 Fraud analysis result:', result);
-    setFraudAnalysisResults(prev => [...prev.slice(-9), result]); // Keep last 10 results
+    setFraudAnalysisResults(prev => [...prev.slice(-9), result]); 
   };
 
   const dismissAlert = (alertTimestamp) => {

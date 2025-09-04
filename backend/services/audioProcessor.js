@@ -34,46 +34,52 @@ class AudioProcessor {
    */
   async processAudioChunk(audioBuffer, format, options = {}) {
     try {
-      console.log(`🎵 Processing ${format} audio chunk...`);
-      
-      const inputFile = await this.saveBufferToTempFile(audioBuffer, format);
-      const outputFile = await this.convertToWav(inputFile, options);
-      
-      // Read the processed WAV file
+      // Deteksi format dari header; jika gagal pakai yang dikirim klien
+      const detected = this.detectAudioFormat(audioBuffer);
+      const inFmt = (detected && detected !== 'unknown')
+        ? detected
+        : ((format || '').toLowerCase().trim() || 'unknown');
+  
+      console.log(`🎵 Processing audio chunk... detected=${detected}, provided=${format}, used=${inFmt}`);
+  
+      // Validasi dasar
+      const validation = this.validateAudioInput(audioBuffer, inFmt);
+      if (!validation.valid) {
+        throw new Error(`Audio validation failed: ${validation.errors.join(', ')}`);
+      }
+  
+      // Simpan buffer ke file sementara (ekstensi sesuai inFmt)
+      const inputFile = await this.saveBufferToTempFile(audioBuffer, inFmt);
+  
+      // Konversi → WAV 16k mono (paksa demuxer via inputFormat)
+      const outputFile = await this.convertToWav(inputFile, {
+        ...options,
+        inputFormat: inFmt,
+      });
+  
+      // Baca WAV hasil
       const processedBuffer = fs.readFileSync(outputFile);
       const audioData = wav.decode(processedBuffer);
-      
-      // Extract metadata
+  
       const metadata = {
         format: 'wav',
         sampleRate: audioData.sampleRate,
         channels: audioData.channelData.length,
         duration: audioData.channelData[0].length / audioData.sampleRate,
-        originalFormat: format,
+        originalFormat: inFmt,
         processingTime: Date.now()
       };
-      
-      // Cleanup temp files
+  
       this.cleanupTempFile(inputFile);
       this.cleanupTempFile(outputFile);
-      
+  
       console.log('✅ Audio processing completed:', metadata);
-      
-      return {
-        audioBuffer: processedBuffer,
-        metadata,
-        success: true
-      };
-      
+  
+      return { audioBuffer: processedBuffer, metadata, success: true };
+  
     } catch (error) {
       console.error('❌ Audio processing error:', error.message);
-      
-      return {
-        audioBuffer: null,
-        metadata: null,
-        error: error.message,
-        success: false
-      };
+      return { audioBuffer: null, metadata: null, error: error.message, success: false };
     }
   }
 
@@ -85,33 +91,94 @@ class AudioProcessor {
    */
   async convertToWav(inputFile, options = {}) {
     return new Promise((resolve, reject) => {
-      const outputFile = path.join(
-        this.tempDir, 
-        `processed_${Date.now()}.wav`
-      );
-
-      console.log('🔄 Converting audio to WAV format...');
-
-      ffmpeg(inputFile)
-        .audioFrequency(options.sampleRate || this.sampleRate)
-        .audioChannels(1) // Mono for AI processing
-        .audioCodec('pcm_s16le') // 16-bit PCM
-        .format('wav')
-        .on('start', (commandLine) => {
-          console.log('📢 FFmpeg command:', commandLine);
-        })
-        .on('progress', (progress) => {
-          console.log('⏳ Processing: ' + Math.round(progress.percent) + '% done');
-        })
-        .on('end', () => {
-          console.log('✅ Audio conversion completed');
-          resolve(outputFile);
-        })
-        .on('error', (error) => {
-          console.error('❌ FFmpeg error:', error.message);
-          reject(error);
-        })
-        .save(outputFile);
+      const outputFile = path.join(this.tempDir, `processed_${Date.now()}.wav`);
+      const sr = options.sampleRate || this.sampleRate;
+      const inFmt = (options.inputFormat || '').toLowerCase();
+  
+      console.log('🔄 Converting audio to WAV format... (inputFormat:', inFmt || 'auto', ')');
+  
+      // Helper: jalankan sekali dengan pilihan demuxer tertentu (atau biarkan auto-probe jika null)
+      const runOnce = (demuxerLabel) =>
+        new Promise((res, rej) => {
+          const cmd = ffmpeg(inputFile);
+  
+          // Paksa demuxer jika ada
+          if (demuxerLabel) {
+            cmd.inputOptions(['-f', demuxerLabel]);
+          }
+          // Bantu FFmpeg membaca potongan blob (perbesar analyzation)
+          cmd.inputOptions(['-analyzeduration', '100M', '-probesize', '100M']);
+  
+          cmd
+            .noVideo()
+            .audioFrequency(sr)
+            .audioChannels(1)            // mono
+            .audioCodec('pcm_s16le')     // 16-bit PCM
+            .format('wav')
+            .outputOptions(['-map_metadata', '-1']) // drop metadata
+            .on('start', (cl) => console.log('📢 FFmpeg command:', cl))
+            .on('progress', (p) => {
+              if (p && typeof p.percent === 'number') {
+                console.log('⏳ Processing:', Math.round(p.percent) + '%');
+              }
+            })
+            .on('end', () => {
+              console.log('✅ Audio conversion completed');
+              res(outputFile);
+            })
+            .on('error', (err) => {
+              console.error('❌ FFmpeg error:', err.message || err);
+              // Hapus output parsial agar percobaan berikutnya bersih
+              try { if (fs.existsSync(outputFile)) fs.unlinkSync(outputFile); } catch (_) {}
+              rej(err);
+            })
+            .save(outputFile);
+        });
+  
+      // Tentukan urutan demuxer yang dicoba berdasarkan inputFormat
+      const attempts = [];
+      switch (inFmt) {
+        case 'webm':
+        case 'matroska':
+          attempts.push('matroska'); // yang benar untuk -f (bukan "matroska,webm")
+          attempts.push(null);       // biarkan FFmpeg probe jika paksa gagal
+          break;
+        case 'ogg':
+        case 'opus':
+          attempts.push('ogg');
+          attempts.push(null);
+          break;
+        case 'mp3':
+          attempts.push('mp3');
+          attempts.push(null);
+          break;
+        case 'wav':
+          attempts.push('wav');
+          attempts.push(null);
+          break;
+        case 'aac':
+        case 'm4a':
+          // sering terdeteksi otomatis; tidak dipaksa
+          attempts.push(null);
+          break;
+        default:
+          // tidak diketahui → coba auto-probe saja
+          attempts.push(null);
+          break;
+      }
+  
+      (async () => {
+        let lastErr;
+        for (const demuxer of attempts) {
+          try {
+            const out = await runOnce(demuxer);
+            return resolve(out);
+          } catch (e) {
+            lastErr = e;
+          }
+        }
+        reject(lastErr || new Error('FFmpeg failed to convert input'));
+      })();
     });
   }
 
@@ -184,33 +251,61 @@ class AudioProcessor {
    * @returns {Object} Validation result
    */
   validateAudioInput(audioBuffer, format) {
-    const maxSizeBytes = 10 * 1024 * 1024; // 10MB limit
-    const supportedFormats = ['flac', 'opus', 'wav'];
-    
-    const validation = {
-      valid: true,
-      errors: []
-    };
-    
-    // Check format support
-    if (!supportedFormats.includes(format.toLowerCase())) {
+    const maxSizeBytes = 10 * 1024 * 1024; // 10MB
+    const supportedFormats = ['flac', 'opus', 'wav', 'webm', 'ogg', 'mp3', 'm4a', 'aac'];
+  
+    const validation = { valid: true, errors: [] };
+  
+    if (!audioBuffer || !Buffer.isBuffer(audioBuffer)) {
+      validation.valid = false;
+      validation.errors.push('Invalid audio buffer');
+      return validation;
+    }
+  
+    const fmt = (format || '').toLowerCase();
+    if (!supportedFormats.includes(fmt)) {
       validation.valid = false;
       validation.errors.push(`Unsupported format: ${format}. Supported: ${supportedFormats.join(', ')}`);
     }
-    
-    // Check file size
+  
     if (audioBuffer.length > maxSizeBytes) {
       validation.valid = false;
       validation.errors.push(`File too large: ${audioBuffer.length} bytes. Max: ${maxSizeBytes} bytes`);
     }
-    
-    // Check minimum size
+  
     if (audioBuffer.length < 1000) {
       validation.valid = false;
       validation.errors.push('Audio file too small');
     }
-    
+  
     return validation;
+  }
+  
+  detectAudioFormat(buffer) {
+    try {
+      const b = buffer;
+      if (!b || b.length < 4) return 'unknown';
+  
+      // WAV (RIFF)
+      if (b.slice(0, 4).toString('ascii') === 'RIFF') return 'wav';
+      // FLAC
+      if (b.slice(0, 4).toString('ascii') === 'fLaC') return 'flac';
+      // OGG container (OggS)
+      if (b[0] === 0x4F && b[1] === 0x67 && b[2] === 0x67 && b[3] === 0x53) return 'ogg';
+      // WebM/Matroska (EBML header)
+      if (b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3) return 'webm';
+      // WebM Cluster (potongan tanpa header EBML)
+      if (b[0] === 0x1F && b[1] === 0x43 && b[2] === 0xB6 && b[3] === 0x75) return 'webm';
+      // MP3: "ID3" atau frame sync 0xFF Ex
+      if (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) return 'mp3';
+      if (b[0] === 0xFF && (b[1] & 0xE0) === 0xE0) return 'mp3';
+      // AAC (ADTS) heuristik
+      if (b[0] === 0xFF && (b[1] & 0xF6) === 0xF0) return 'aac';
+  
+      return 'unknown';
+    } catch {
+      return 'unknown';
+    }
   }
 
   /**

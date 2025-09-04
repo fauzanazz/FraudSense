@@ -114,7 +114,7 @@ function Login({ onLogin, users }) {
         </button>
       </div>
 
-      <div className='absolute inset-0 pointer-events-none'>
+      {/* <div className='absolute inset-0 pointer-events-none'>
         <Prism
           animationType="rotate"
           timeScale={0.5}
@@ -126,7 +126,7 @@ function Login({ onLogin, users }) {
           noise={0}
           glow={1}
         />
-      </div>
+      </div> */}
     </div>
   );
 }

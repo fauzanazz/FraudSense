@@ -51,6 +51,10 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
     };
   }, []);
 
+  useEffect(() => {
+    console.log(audioFormat)
+  }, [audioFormat]);
+
   // Handle local stream attachment to video element
   useEffect(() => {
     if (localStream && localVideoRef.current) {
@@ -591,52 +595,72 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
 
   const setupAudioRecording = (stream) => {
     try {
-      // Create audio-only stream for recording
       const audioOnlyStream = new MediaStream(stream.getAudioTracks());
-      
-      // Check if MediaRecorder supports the selected format
-      const mimeType = `audio/${audioFormat}`;
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        console.warn(`❌ ${mimeType} not supported, falling back to webm`);
-        setAudioFormat('webm');
-      }
-
-      const mediaRecorder = new MediaRecorder(audioOnlyStream, {
-        mimeType: MediaRecorder.isTypeSupported(`audio/${audioFormat}`) ? `audio/${audioFormat}` : 'audio/webm'
-      });
-
+  
+      // Pilih MIME yang stabil (ogg/webm opus)
+      const prefer = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm'];
+      let chosen = prefer.find(m => MediaRecorder.isTypeSupported(m)) || '';
+  
+      const mediaRecorder = chosen
+        ? new MediaRecorder(audioOnlyStream, { mimeType: chosen })
+        : new MediaRecorder(audioOnlyStream);
+  
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-          
-          // Convert chunk to base64 and send for fraud analysis
-          const reader = new FileReader();
-          reader.onload = () => {
-            const base64Data = reader.result.split(',')[1]; // Remove data:audio/... prefix
-            
-            socket.emit('audio-chunk', {
-              conversationId: callData.conversationId || `call_${user._id}_${Date.now()}`,
-              audioData: base64Data,
-              userId: user._id,
-              format: audioFormat
-            });
-          };
-          reader.readAsDataURL(event.data);
+  
+      mediaRecorder.ondataavailable = async (event) => {
+        if (!event.data || event.data.size === 0) return;
+  
+        // simpan chunk
+        audioChunksRef.current.push(event.data);
+  
+        // Bikin BLOB kumulatif (header ikut dari chunk awal)
+        // (opsional) batasi ke window terakhir 10 detik: potong array saat terlalu panjang
+        // contoh pembatasan: jika total size > ~1.5MB, hapus chunk terlama
+        let totalSize = audioChunksRef.current.reduce((s, c) => s + c.size, 0);
+        while (totalSize > 1.5 * 1024 * 1024 && audioChunksRef.current.length > 1) {
+          totalSize -= audioChunksRef.current.shift().size;
         }
+  
+        const cumulativeBlob = new Blob(audioChunksRef.current, { type: event.data.type || 'audio/webm' });
+  
+        // Read as base64
+        const arrayBuf = await cumulativeBlob.arrayBuffer();
+        const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
+  
+        // Derive real format from MIME
+        const t = (cumulativeBlob.type || '').toLowerCase();
+        const fmt = t.includes('ogg') ? 'ogg'
+                  : t.includes('webm') ? 'webm'
+                  : t.includes('wav') ? 'wav'
+                  : t.includes('mpeg') || t.includes('mp3') ? 'mp3'
+                  : 'unknown';
+  
+        socket.emit('audio-chunk', {
+          conversationId: callData.conversationId || `call_${user._id}_${Date.now()}`,
+          audioData: base64Data,
+          userId: user._id,
+          format: fmt
+        });
       };
-
+  
       mediaRecorder.onerror = (event) => {
         console.error('❌ MediaRecorder error:', event.error);
       };
-
-      console.log('🎙️ Audio recording setup complete');
+  
+      console.log('🎙️ Audio recording setup complete. Using mime:', mediaRecorder.mimeType);
     } catch (error) {
       console.error('❌ Error setting up audio recording:', error);
     }
   };
+
+  // Recreate MediaRecorder when audio format changes
+  useEffect(() => {
+    if (localStream && mediaRecorderRef.current) {
+      console.log(`🔄 Audio format changed to ${audioFormat}, recreating MediaRecorder`);
+      setupAudioRecording(localStream);
+    }
+  }, [audioFormat]);
 
   const startAudioRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'inactive') {
