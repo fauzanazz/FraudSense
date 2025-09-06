@@ -16,8 +16,17 @@ class FraudDetectionService {
   constructor() {
     this.debounceTimeouts = new Map(); // Store debounce timeouts by conversation ID
     this.debounceDelay = parseInt(process.env.FRAUD_ANALYSIS_DEBOUNCE) || 3000;
-    this.enableRealTimeAlerts = process.env.ENABLE_REAL_TIME_ALERTS === 'true';
-    this.storeFraudResults = process.env.STORE_FRAUD_RESULTS === 'true';
+    this.enableRealTimeAlerts = process.env.ENABLE_REAL_TIME_ALERTS !== 'false'; // Default to true
+    this.storeFraudResults = process.env.STORE_FRAUD_RESULTS !== 'false'; // Default to true
+    
+    // Debug environment variables
+    console.log('🔧 FraudDetectionService initialized:', {
+      enableRealTimeAlerts: this.enableRealTimeAlerts,
+      storeFraudResults: this.storeFraudResults,
+      debounceDelay: this.debounceDelay,
+      envENABLE_REAL_TIME_ALERTS: process.env.ENABLE_REAL_TIME_ALERTS,
+      envSTORE_FRAUD_RESULTS: process.env.STORE_FRAUD_RESULTS
+    });
   }
 
   /**
@@ -205,9 +214,20 @@ class FraudDetectionService {
         ? fraudAnalysis.shouldTriggerAlert()
         : (analysisResult.fraudScore === 1);
   
+      console.log('🚨 Alert decision debug:', {
+        fraudScore: analysisResult.fraudScore,
+        shouldAlert: shouldAlert,
+        enableRealTimeAlerts: this.enableRealTimeAlerts,
+        hasShouldTriggerAlert: !!fraudAnalysis.shouldTriggerAlert,
+        willTriggerAlert: shouldAlert && this.enableRealTimeAlerts
+      });
+  
       let alertResult = null;
       if (shouldAlert && this.enableRealTimeAlerts) {
         alertResult = await this.triggerFraudAlert(fraudAnalysis, 'audio');
+        console.log('🚨 Alert triggered successfully:', alertResult);
+      } else {
+        console.log('🚫 Alert NOT triggered - shouldAlert:', shouldAlert, 'enableRealTimeAlerts:', this.enableRealTimeAlerts);
       }
   
       console.log(`✅ Audio analysis completed - Score: ${analysisResult.fraudScore}, Alert: ${shouldAlert}`);

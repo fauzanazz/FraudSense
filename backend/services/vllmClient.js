@@ -144,12 +144,26 @@ class VLLMClient {
         },
       });
 
+      console.log('🔍 Audio analysis response:', response);
+
       const rawText = String(response?.text ?? '').trim();
+
+      console.log('🔍 Audio analysis raw text:', rawText);
+
       const processingTime = Date.now() - startTime;
       const { score, label, reason } = safeParseThreeFieldJSON(rawText);
 
       // Legacy mapping (AUDIO): 1=fraud, 0=normal
       const fraudScore = (label === 'fraud') || (typeof score === 'number' && score >= 0.5) ? 1 : 0;
+
+      console.log('🔍 Audio analysis decision:', {
+        rawScore: score,
+        label: label,
+        reason: reason,
+        scoreCheck: typeof score === 'number' && score >= 0.5,
+        labelCheck: label === 'fraud',
+        finalFraudScore: fraudScore
+      });
 
       return {
         success: true,
