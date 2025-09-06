@@ -8,12 +8,20 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [localAudioLevel, setLocalAudioLevel] = useState(0);
   const [remoteAudioLevel, setRemoteAudioLevel] = useState(0);
-  const [audioFormat, setAudioFormat] = useState('webm');
+  const [audioFormat, setAudioFormat] = useState('wav');
   const [isRecording, setIsRecording] = useState(false);
   const [fraudAlerts, setFraudAlerts] = useState([]);
   const [activeFraudWarning, setActiveFraudWarning] = useState(null);
   const [fraudScore, setFraudScore] = useState(0);
   const [callSessionId, setCallSessionId] = useState(null);
+  const [recordedAudioBlob, setRecordedAudioBlob] = useState(null);
+  const [isSavingAudio, setIsSavingAudio] = useState(false);
+  const [autoAudioInterval, setAutoAudioInterval] = useState(null);
+  const [isAutoSending, setIsAutoSending] = useState(false);
+  const [nextAudioSendTime, setNextAudioSendTime] = useState(null);
+  const [iceConnectionState, setIceConnectionState] = useState('new');
+  const [savedRecordings, setSavedRecordings] = useState([]);
+  const [showStorageManager, setShowStorageManager] = useState(false);
 
   const localVideoRef = useRef();
   const remoteVideoRef = useRef();
@@ -47,7 +55,7 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
     socket.on('call-ended', handleCallEnded);
     socket.on('ice-candidate', handleIceCandidate);
     socket.on('fraud-alert', handleFraudAlert);
-    socket.on('fraud-analysis-result', handleFraudAnalysisResult);
+    socket.on('audio-saved', handleAudioSaved);
     
     return () => {
       console.log('🔌 Cleaning up socket listeners');
@@ -55,13 +63,74 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
       socket.off('call-ended', handleCallEnded);
       socket.off('ice-candidate', handleIceCandidate);
       socket.off('fraud-alert', handleFraudAlert);
-      socket.off('fraud-analysis-result', handleFraudAnalysisResult);
+      socket.off('audio-saved', handleAudioSaved);
     };
   }, []);
 
   useEffect(() => {
     console.log(audioFormat)
   }, [audioFormat]);
+
+  // Auto-start audio recording when call is accepted
+  useEffect(() => {
+    if (callAccepted && localStream) {
+      // Start automatic audio recording immediately when call is accepted
+      const startTimer = setTimeout(() => {
+        startAutoAudioSending();
+        console.log('🚀 Auto-started audio recording when call accepted');
+      }, 2000); // 2 second delay to ensure call is stable
+      
+      return () => clearTimeout(startTimer);
+    }
+  }, [callAccepted, localStream]);
+
+  // Load saved recordings when component mounts
+  useEffect(() => {
+    loadSavedRecordings();
+  }, []);
+
+  // Update countdown timer every second
+  useEffect(() => {
+    if (!isAutoSending || !nextAudioSendTime) return;
+    
+    const timer = setInterval(() => {
+      // Force re-render to update countdown
+      setNextAudioSendTime(prev => prev);
+    }, 1000);
+    
+    return () => clearInterval(timer);
+  }, [isAutoSending, nextAudioSendTime]);
+
+  // Monitor fraud alerts changes (simplified)
+  useEffect(() => {
+    if (fraudAlerts.length > 0) {
+      console.log('🚨 Fraud alerts updated:', fraudAlerts.length, 'alerts');
+    }
+  }, [fraudAlerts]);
+
+  // Clean up old alerts every 30 seconds
+  useEffect(() => {
+    if (!isAutoSending) return;
+    
+    const cleanupTimer = setInterval(() => {
+      setFraudAlerts(prev => {
+        const now = new Date();
+        const filtered = prev.filter(alert => {
+          const alertTime = new Date(alert.timestamp);
+          const ageMinutes = (now - alertTime) / (1000 * 60);
+          return ageMinutes < 5; // Keep alerts for 5 minutes
+        });
+        
+        if (filtered.length !== prev.length) {
+          console.log(`🧹 Cleaned up ${prev.length - filtered.length} old alerts`);
+        }
+        
+        return filtered;
+      });
+    }, 30000); // Clean up every 30 seconds
+    
+    return () => clearInterval(cleanupTimer);
+  }, [isAutoSending]);
 
   // Handle local stream attachment to video element
   useEffect(() => {
@@ -250,6 +319,7 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
 
       pc.oniceconnectionstatechange = () => {
         console.log('🧊 ICE connection state:', pc.iceConnectionState);
+        setIceConnectionState(pc.iceConnectionState);
         
         if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
           console.log('✅ ICE connection established');
@@ -268,7 +338,7 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
               console.warn('⏰ ICE connection timeout, restarting ICE');
               pc.restartIce();
             }
-          }, 30000); // 30 second timeout
+          }, 10000); // 30 second timeout
         }
       };
 
@@ -504,7 +574,7 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
               pendingRemoteIceCandidatesRef.current.splice(index, 1);
               console.warn('⏰ Removed expired buffered ICE candidate');
             }
-          }, 30000); // 30 second timeout for buffered candidates
+          }, 10000); // 30 second timeout for buffered candidates
         }
       } catch (error) {
         console.error('❌ Error adding ICE candidate:', {
@@ -535,41 +605,89 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
   };
 
   const handleFraudAlert = (alertData) => {
-    console.log('🚨 Fraud alert received in video call:', alertData);
-    console.log('📊 Alert details:', {
-      type: alertData.type,
-      fraudScore: alertData.fraudScore,
-      confidence: alertData.confidence,
-      severity: alertData.severity,
-      message: alertData.message
-    });
+    console.log('🚨 Fraud alert received:', alertData);
     
     setFraudAlerts(prev => [...prev, alertData]);
+    setFraudScore(alertData.fraudScore);
     
-    // Audio fraud only: score 1 = fraud detected, score 0 = normal
-    setFraudScore(alertData.fraudScore === 1 ? 1 : 0);
-    
-    // Show warning modal for high severity alerts
-    if (alertData.severity === 'high') {
+    // Show warning modal for fraud
+    if (alertData.fraudScore === 1) {
       setActiveFraudWarning(alertData.fraudScore);
     }
   };
 
-  const handleFraudAnalysisResult = (result) => {
-    console.log('📊 Fraud analysis result in video call:', result);
-    console.log('📊 Analysis details:', {
-      success: result.success,
-      type: result.type,
-      fraudScore: result.fraudScore,
-      confidence: result.confidence,
-      alertTriggered: result.alertTriggered
-    });
-    
-    // Update fraud score based on analysis result
+
+  const handleAudioSaved = (result) => {
+    console.log('💾 Audio save result:', result);
     if (result.success) {
-      // Audio fraud only: score 1 = fraud detected, score 0 = normal
-      setFraudScore(result.fraudScore === 1 ? 1 : 0);
+      console.log('✅ Audio recording saved successfully to server');
+      // Refresh saved recordings list
+      loadSavedRecordings();
+    } else {
+      console.error('❌ Failed to save audio recording:', result.error);
     }
+  };
+
+  const loadSavedRecordings = async () => {
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE}/api/audio/recordings`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setSavedRecordings(data.recordings);
+      }
+    } catch (error) {
+      console.error('Error loading saved recordings:', error);
+    }
+  };
+
+  const downloadRecording = async (filename) => {
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE}/api/audio/recordings/${filename}`);
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error('Error downloading recording:', error);
+    }
+  };
+
+  const deleteRecording = async (filename) => {
+    if (!confirm(`Delete ${filename}?`)) return;
+    
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE}/api/audio/recordings/${filename}`, {
+        method: 'DELETE'
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setSavedRecordings(prev => prev.filter(r => r.filename !== filename));
+      }
+    } catch (error) {
+      console.error('Error deleting recording:', error);
+    }
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   const dismissAlert = (alertTimestamp) => {
@@ -678,18 +796,26 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
         audioChunksRef.current.push(event.data);
   
         // Bikin BLOB kumulatif (header ikut dari chunk awal)
-        // (opsional) batasi ke window terakhir 10 detik: potong array saat terlalu panjang
-        // contoh pembatasan: jika total size > ~1.5MB, hapus chunk terlama
+        // Batasi ke window terakhir 5 menit: potong array saat terlalu panjang
+        // contoh pembatasan: jika total size > ~50MB, hapus chunk terlama
         let totalSize = audioChunksRef.current.reduce((s, c) => s + c.size, 0);
-        while (totalSize > 1.5 * 1024 * 1024 && audioChunksRef.current.length > 1) {
+        while (totalSize > 50 * 1024 * 1024 && audioChunksRef.current.length > 1) {
           totalSize -= audioChunksRef.current.shift().size;
         }
   
         const cumulativeBlob = new Blob(audioChunksRef.current, { type: event.data.type || 'audio/webm' });
   
-        // Read as base64
+        // Read as base64 (fix stack overflow for large buffers)
         const arrayBuf = await cumulativeBlob.arrayBuffer();
-        const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
+        const uint8Array = new Uint8Array(arrayBuf);
+        let binary = '';
+        const chunkSize = 8192; // Process in chunks to avoid stack overflow
+        
+        for (let i = 0; i < uint8Array.length; i += chunkSize) {
+          const chunk = uint8Array.subarray(i, i + chunkSize);
+          binary += String.fromCharCode.apply(null, chunk);
+        }
+        const base64Data = btoa(binary);
   
         // Derive real format from MIME
         const t = (cumulativeBlob.type || '').toLowerCase();
@@ -700,7 +826,7 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
                   : 'unknown';
   
         const audioChunkData = {
-          conversationId: callSessionId || `call_${user._id}_${Date.now()}`,
+          conversationId: callSessionId,
           audioData: base64Data,
           userId: user._id,
           format: fmt
@@ -711,7 +837,10 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
           userId: audioChunkData.userId,
           format: audioChunkData.format,
           dataSize: base64Data.length,
-          blobType: cumulativeBlob.type
+          blobType: cumulativeBlob.type,
+          chunkCount: audioChunksRef.current.length,
+          totalSizeMB: (totalSize / (1024 * 1024)).toFixed(2),
+          timestamp: new Date().toISOString()
         });
         
         socket.emit('audio-chunk', audioChunkData);
@@ -737,18 +866,204 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
 
   const startAudioRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'inactive') {
-      mediaRecorderRef.current.start(2000); // Record in 2-second chunks
+      mediaRecorderRef.current.start(10000); // Record in 30-second chunks
       setIsRecording(true);
       console.log('🔴 Started audio recording for fraud detection');
     }
   };
 
-  const stopAudioRecording = () => {
+  const stopAudioRecording = async () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       console.log('⏹️ Stopped audio recording');
+      
+      // Create final audio blob from all chunks
+      if (audioChunksRef.current.length > 0) {
+        const finalBlob = new Blob(audioChunksRef.current, { 
+          type: mediaRecorderRef.current.mimeType || 'audio/webm' 
+        });
+        setRecordedAudioBlob(finalBlob);
+        console.log('💾 Final audio blob created:', {
+          size: finalBlob.size,
+          type: finalBlob.type
+        });
+        
+        // Immediately send audio for fraud detection
+        try {
+          const arrayBuffer = await finalBlob.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+          let binary = '';
+          const chunkSize = 8192; // Process in chunks to avoid stack overflow
+          
+          for (let i = 0; i < uint8Array.length; i += chunkSize) {
+            const chunk = uint8Array.subarray(i, i + chunkSize);
+            binary += String.fromCharCode.apply(null, chunk);
+          }
+          const base64Data = btoa(binary);
+          
+          const audioChunkData = {
+            conversationId: callSessionId,
+            audioData: base64Data,
+            userId: user._id,
+            format: audioFormat,
+            isImmediateCheck: true // Flag for immediate fraud check
+          };
+          
+          console.log('🚨 Sending audio for immediate fraud detection:', {
+            conversationId: audioChunkData.conversationId,
+            userId: audioChunkData.userId,
+            format: audioChunkData.format,
+            dataSize: base64Data.length
+          });
+          
+          socket.emit('audio-chunk', audioChunkData);
+        } catch (error) {
+          console.error('❌ Error sending audio for immediate fraud check:', error);
+        }
+      }
     }
+  };
+
+  const downloadRecordedAudio = () => {
+    if (recordedAudioBlob) {
+      const url = URL.createObjectURL(recordedAudioBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `call-recording-${callSessionId || Date.now()}.${audioFormat}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      console.log('📥 Audio download initiated');
+    }
+  };
+
+  const saveAudioToBackend = async () => {
+    if (!recordedAudioBlob) return;
+    
+    setIsSavingAudio(true);
+    try {
+      // Convert blob to base64 (fix stack overflow for large buffers)
+      const arrayBuffer = await recordedAudioBlob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      let binary = '';
+      const chunkSize = 8192; // Process in chunks to avoid stack overflow
+      
+      for (let i = 0; i < uint8Array.length; i += chunkSize) {
+        const chunk = uint8Array.subarray(i, i + chunkSize);
+        binary += String.fromCharCode.apply(null, chunk);
+      }
+      const base64Data = btoa(binary);
+      
+      const audioData = {
+        conversationId: callSessionId,
+        audioData: base64Data,
+        userId: user._id,
+        format: audioFormat,
+        isCompleteRecording: true,
+        recordingDuration: recordedAudioBlob.size / 1000, // Rough estimate
+        timestamp: new Date().toISOString()
+      };
+      
+      // Send complete audio to backend
+      socket.emit('save-complete-audio', audioData);
+      console.log('💾 Complete audio sent to backend for permanent storage');
+      
+    } catch (error) {
+      console.error('❌ Error saving audio to backend:', error);
+    } finally {
+      setIsSavingAudio(false);
+    }
+  };
+
+  const startAutoAudioSending = () => {
+    if (autoAudioInterval) {
+      clearInterval(autoAudioInterval);
+    }
+    
+    setIsAutoSending(true);
+    console.log('🔄 Starting automatic audio sending every 15 seconds');
+    
+    // Set initial next send time
+    const now = new Date();
+    const nextSend = new Date(now.getTime() + 15000);
+    setNextAudioSendTime(nextSend);
+    
+    // Start recording immediately with longer chunks
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'inactive') {
+      mediaRecorderRef.current.start(15000); // 15-second chunks
+      setIsRecording(true);
+      console.log('🔴 Started continuous audio recording for fraud detection');
+    }
+    
+    // Set up interval to send audio every 15 seconds
+    const interval = setInterval(() => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        console.log('⏰ 15-second interval reached, sending audio chunk');
+        
+        // Stop current recording to trigger data available event
+        mediaRecorderRef.current.stop();
+        
+        // Update next send time
+        const nextSend = new Date(Date.now() + 15000);
+        setNextAudioSendTime(nextSend);
+        
+        // Restart recording with retry mechanism to handle ICE candidate conflicts
+        const restartRecording = (attempt = 1) => {
+          setTimeout(() => {
+            // Check if ICE is still processing - delay recording if so
+            if (iceConnectionState === 'checking' || iceConnectionState === 'connecting') {
+              console.log('🧊 ICE candidate processing, delaying audio recording restart');
+              if (attempt < 5) { // Allow more attempts for ICE conflicts
+                restartRecording(attempt + 1);
+                return;
+              }
+            }
+            
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'inactive') {
+              try {
+                mediaRecorderRef.current.start(15000);
+                console.log('🔄 Restarted audio recording for next 15-second chunk');
+              } catch (error) {
+                console.warn(`⚠️ Failed to restart recording (attempt ${attempt}):`, error);
+                if (attempt < 5) { // Increased attempts for ICE conflicts
+                  // Retry with longer delay if ICE candidate is being processed
+                  restartRecording(attempt + 1);
+                } else {
+                  console.error('❌ Failed to restart recording after 5 attempts');
+                }
+              }
+            } else if (attempt < 5) {
+              // MediaRecorder not ready, retry
+              restartRecording(attempt + 1);
+            }
+          }, attempt * 1000); // Longer delay: 1s, 2s, 3s, 4s, 5s
+        };
+        
+        restartRecording();
+      }
+    }, 15000); // 15 seconds
+    
+    setAutoAudioInterval(interval);
+  };
+
+  const stopAutoAudioSending = () => {
+    if (autoAudioInterval) {
+      clearInterval(autoAudioInterval);
+      setAutoAudioInterval(null);
+    }
+    
+    setIsAutoSending(false);
+    setNextAudioSendTime(null);
+    
+    // Stop recording if it's still active
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+    
+    console.log('⏹️ Stopped automatic audio sending');
   };
 
   const cleanup = () => {
@@ -766,8 +1081,8 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
       try { localVideoRef.current.srcObject = null; } catch (_) {}
     }
 
-    // Stop audio recording
-    stopAudioRecording();
+    // Stop audio recording and auto-sending
+    stopAutoAudioSending();
 
     // Proactively stop and remove senders/transceivers
     if (peerConnectionRef.current) {
@@ -832,6 +1147,7 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
     setFraudAlerts([]);
     setActiveFraudWarning(null);
     setFraudScore(0);
+    // Note: recordedAudioBlob is preserved for download/save functionality
   };
 
   return (
@@ -911,7 +1227,12 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
             <p className="m-0">Remote stream tracks: {remoteStream?.getTracks().length || 0}</p>
             <p className="m-0">Video enabled: {isVideoEnabled ? '✅' : '❌'}</p>
             <p className="m-0">Audio enabled: {isAudioEnabled ? '✅' : '❌'}</p>
+            <p className="m-0">Recording: {isRecording ? '🔴' : '⭕'}</p>
+            <p className="m-0">Auto Record: {isAutoSending ? '🔄' : '⏹️'}</p>
+            <p className="m-0">Call Status: {callAccepted ? '✅' : '⏳'}</p>
+            <p className="m-0">ICE State: {iceConnectionState}</p>
             <p className="m-0">Fraud Status: {fraudScore > 0 ? 'DETECTED' : 'NORMAL'}</p>
+            <p className="m-0">Active Alerts: {fraudAlerts.length}</p>
           </div>
         </div>
 
@@ -930,14 +1251,28 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
         {/* Fraud Alerts */}
         {fraudAlerts.length > 0 && (
           <div className="bg-amber-50 border border-amber-200 m-0 p-0">
+            <div className="flex items-center justify-between p-2 bg-amber-100 border-b border-amber-200">
+              <span className="text-[0.8rem] text-amber-700 font-semibold">
+                🚨 Fraud Detection Alerts ({fraudAlerts.length})
+              </span>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-[0.7rem] text-amber-600">Auto-refresh active</span>
+              </div>
+            </div>
             {fraudAlerts.map((alert, index) => (
-              <div key={index} className={`${alert.severity === 'high' ? 'bg-red-50 border-l-4 border-red-400' : 'bg-amber-50 border-l-4 border-amber-400'} m-0 p-0 animate-[slideIn_0.3s_ease-out]`}>
+              <div key={`${alert.timestamp}-${index}`} className={`${alert.severity === 'high' ? 'bg-red-50 border-l-4 border-red-400' : 'bg-amber-50 border-l-4 border-amber-400'} m-0 p-0 animate-[slideIn_0.3s_ease-out]`}>
                 <div className="flex items-start p-3 gap-2">
                   <span className="text-[1.2rem] text-red-500 shrink-0 mt-[0.1rem]">🚨</span>
                   <div className="flex-1 min-w-0">
                     <strong className="text-neutral-800 text-[0.9rem] mb-1 block">Call Fraud Alert ({alert.type})</strong>
                     <p className="m-1 my-1 text-neutral-700 text-[0.85rem] leading-[1.3]">{alert.message}</p>
-                    <small className="text-neutral-600 text-[0.75rem] block mt-1">Score: {alert.fraudScore}, Confidence: {(alert.confidence * 100).toFixed(1)}%</small>
+                    <small className="text-neutral-600 text-[0.75rem] block mt-1">
+                      Score: {alert.fraudScore}, Confidence: {(alert.confidence * 100).toFixed(1)}%
+                      <span className="ml-2 text-[0.7rem] text-gray-500">
+                        {new Date(alert.timestamp).toLocaleTimeString()}
+                      </span>
+                    </small>
                   </div>
                   <button 
                     className="text-neutral-500 text-[1.2rem] w-5 h-5 shrink-0 flex items-center justify-center rounded-full hover:bg-black/5 hover:text-red-500 cursor-pointer"
@@ -951,6 +1286,54 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
           </div>
         )}
 
+        {/* Saved Recordings List */}
+        {showStorageManager && (
+          <div className="bg-neutral-800 border-t border-neutral-700 max-h-48 overflow-y-auto">
+            <div className="p-3 border-b border-neutral-700">
+              <h4 className="text-white text-sm font-semibold mb-2">📁 Saved Recordings ({savedRecordings.length})</h4>
+            </div>
+            <div className="p-3">
+              {savedRecordings.length === 0 ? (
+                <p className="text-neutral-400 text-sm">No saved recordings found</p>
+              ) : (
+                <div className="space-y-2">
+                  {savedRecordings.slice(0, 5).map((recording, index) => (
+                    <div key={index} className="flex items-center justify-between bg-neutral-700 rounded p-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-xs font-medium truncate">{recording.filename}</p>
+                        <p className="text-neutral-400 text-xs">
+                          {formatFileSize(recording.size)} • {new Date(recording.timestamp).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="flex gap-1 ml-2">
+                        <button
+                          onClick={() => downloadRecording(recording.filename)}
+                          className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs"
+                          title="Download"
+                        >
+                          📥
+                        </button>
+                        <button
+                          onClick={() => deleteRecording(recording.filename)}
+                          className="px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs"
+                          title="Delete"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {savedRecordings.length > 5 && (
+                    <p className="text-neutral-400 text-xs text-center">
+                      ... and {savedRecordings.length - 5} more recordings
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="p-5 flex justify-center">
           {/* Audio Format Selection */}
           <div className="flex items-center gap-2 my-2 p-2 bg-neutral-800 rounded border border-neutral-700">
@@ -958,19 +1341,89 @@ const VideoCall = ({ socket, callData, user, onEndCall }) => {
             <select 
               value={audioFormat} 
               onChange={(e) => setAudioFormat(e.target.value)}
-              disabled={isRecording}
+              disabled={isRecording || isAutoSending}
               className="px-2 py-1 border border-neutral-600 rounded text-[0.85rem] bg-neutral-900 text-neutral-100"
             >
               <option value="webm">WebM</option>
               <option value="wav">WAV</option>
               <option value="ogg">OGG</option>
             </select>
+            {/* Manual record button hidden - auto recording is enabled */}
+            {!isAutoSending && (
             <button 
               onClick={isRecording ? stopAudioRecording : startAudioRecording}
               className={`px-4 py-2 bg-[#6c757d] text-white rounded ${isRecording ? 'bg-[#dc3545] opacity-70' : ''} cursor-pointer`}
-              title="Toggle fraud detection recording"
+                title="Manual fraud detection recording"
             >
               {isRecording ? '🔴 Recording' : '⭕ Record'}
+            </button>
+            )}
+            {/* Auto recording runs continuously - no manual control needed */}
+          </div>
+
+          {/* Auto Audio Status */}
+          {isAutoSending && (
+            <div className="flex items-center gap-2 my-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+              <span className="text-[0.85rem] text-blue-300 m-0">
+                🔄 Auto-recording & fraud detection active (every 15s)
+              </span>
+              <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
+              {nextAudioSendTime && (
+                <span className="text-[0.75rem] text-blue-200 m-0">
+                  Next: {Math.max(0, Math.ceil((nextAudioSendTime - new Date()) / 1000))}s
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Auto Start Notice */}
+          {callAccepted && !isAutoSending && (
+            <div className="flex items-center gap-2 my-2 p-2 bg-green-900/20 rounded border border-green-700">
+              <span className="text-[0.85rem] text-green-300 m-0">
+                ✅ Auto-recording & fraud detection will start in 2 seconds
+              </span>
+            </div>
+          )}
+
+          {/* Audio Recording Controls */}
+          {recordedAudioBlob && (
+            <div className="flex items-center gap-2 my-2 p-2 bg-green-900/20 rounded border border-green-700">
+              <span className="text-[0.85rem] text-green-300 m-0">
+                📁 Recording saved ({Math.round(recordedAudioBlob.size / 1024)}KB)
+              </span>
+              <button 
+                onClick={downloadRecordedAudio}
+                className="px-3 py-1 bg-green-600 hover:bg-green-500 text-white rounded text-[0.8rem] cursor-pointer"
+                title="Download recorded audio"
+              >
+                📥 Download
+              </button>
+              <button 
+                onClick={saveAudioToBackend}
+                disabled={isSavingAudio}
+                className={`px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-[0.8rem] cursor-pointer ${isSavingAudio ? 'opacity-50' : ''}`}
+                title="Save to backend permanently"
+              >
+                {isSavingAudio ? '💾 Saving...' : '💾 Save to Server'}
+              </button>
+            </div>
+          )}
+
+          {/* Saved Recordings Manager */}
+          <div className="flex items-center gap-2 my-2 p-2 bg-purple-900/20 rounded border border-purple-700">
+            <button 
+              onClick={() => setShowStorageManager(!showStorageManager)}
+              className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[0.8rem] cursor-pointer"
+              title="Manage saved recordings"
+            >
+              {showStorageManager ? '📁 Hide Storage' : '📁 Saved Recordings'} ({savedRecordings.length})
+            </button>
+            <button 
+              onClick={loadSavedRecordings}
+              className="px-3 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded text-[0.8rem] cursor-pointer"
+              title="Refresh recordings list"
+            >
+              🔄 Refresh
             </button>
           </div>
 

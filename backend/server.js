@@ -338,26 +338,86 @@ io.on('connection', (socket) => {
       // Trigger audio fraud analysis
       const analysisResult = await fraudDetection.analyzeAudioChunk(audioBuffer, format, metadata);
       
+      // Only send alert if fraud is detected (no analysis result sent)
       if (analysisResult.success && analysisResult.alertTriggered) {
         // Send fraud alert to all participants in the conversation
         io.to(conversationId).emit('fraud-alert', {
           type: 'audio',
-          ...analysisResult.alertData,
-          timestamp: new Date()
+          fraudScore: analysisResult.fraudScore,
+          confidence: analysisResult.confidence,
+          severity: analysisResult.fraudScore === 1 ? 'high' : 'low',
+          message: analysisResult.fraudScore === 1 
+            ? 'Suspicious audio patterns detected in call'
+            : 'Normal audio patterns detected',
+          timestamp: new Date(),
+          analysisId: analysisResult.analysisId
         });
         console.log(`🚨 Audio fraud alert sent to conversation ${conversationId}`);
       }
       
-      // Send analysis result to conversation participants
-      io.to(conversationId).emit('fraud-analysis-result', {
-        type: 'audio',
-        conversationId,
-        ...analysisResult
-      });
-      
     } catch (error) {
       console.error('Error processing audio chunk:', error);
       socket.emit('audio-analysis-error', { error: error.message });
+    }
+  });
+
+  socket.on('save-complete-audio', async (data) => {
+    try {
+      const { conversationId, audioData, userId, format = 'webm', isCompleteRecording, recordingDuration, timestamp } = data;
+      
+      console.log('💾 Saving complete audio recording:', {
+        conversationId,
+        userId,
+        format,
+        isCompleteRecording,
+        recordingDuration,
+        dataSize: audioData?.length || 0
+      });
+
+      // Convert base64 audio data to buffer
+      const audioBuffer = Buffer.from(audioData, 'base64');
+
+      // Save complete audio file to permanent storage
+      const saveResult = await audioProcessor.saveCompleteAudioRecording({
+        audioBuffer,
+        format,
+        metadata: {
+          conversationId,
+          userId,
+          socketId: socket.id,
+          isCompleteRecording: true,
+          recordingDuration,
+          timestamp: new Date(timestamp),
+          originalSize: audioBuffer.length
+        }
+      });
+
+      if (saveResult.success) {
+        console.log('✅ Complete audio recording saved:', saveResult.filePath);
+        
+        // Send confirmation back to client
+        socket.emit('audio-saved', {
+          success: true,
+          filePath: saveResult.filePath,
+          fileSize: saveResult.fileSize,
+          message: 'Audio recording saved successfully'
+        });
+      } else {
+        console.error('❌ Failed to save complete audio:', saveResult.error);
+        socket.emit('audio-saved', {
+          success: false,
+          error: saveResult.error,
+          message: 'Failed to save audio recording'
+        });
+      }
+      
+    } catch (error) {
+      console.error('Error saving complete audio:', error);
+      socket.emit('audio-saved', {
+        success: false,
+        error: error.message,
+        message: 'Error saving audio recording'
+      });
     }
   });
 
